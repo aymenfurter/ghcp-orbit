@@ -1,77 +1,56 @@
 import { execSync } from 'child_process';
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { mkdirSync, existsSync, readFileSync, writeFileSync, copyFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
-// Generates PNG icons from the SVG source for all platforms.
-// Requires `sips` (macOS built-in) and `iconutil` (macOS built-in).
-// For the .icns file (macOS app icon), we use iconutil.
-// For Windows .ico, we bundle a multi-res PNG set that electron-builder handles.
+// Generates platform icons from pre-existing PNG source files in assets/.
+// - macOS .icns via iconutil (macOS only)
+// - Windows .ico via PNG-embedded ICO format (cross-platform)
+// No SVG tools or external converters required.
 
-const assetsDir = join(import.meta.dirname || __dirname, '..', 'assets');
-const svgPath = join(assetsDir, 'icon.svg');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const assetsDir = join(__dirname, '..', 'assets');
 const iconsetDir = join(assetsDir, 'icon.iconset');
-
-// Sizes needed for macOS iconset
-const macSizes = [16, 32, 64, 128, 256, 512, 1024];
-// Sizes needed for various purposes
-const pngSizes = [16, 32, 48, 64, 128, 256, 512, 1024];
 
 function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
-function svgToPng(svgFile, pngFile, size) {
-  // Use sips to convert — available on all macOS
-  // First, we need a temporary PNG at high res, then resize
-  // Actually, sips doesn't handle SVG. Let's use the built-in qlmanage or a simple approach.
-  // We'll use a node-based approach with resvg if available, otherwise fall back to rsvg-convert or qlmanage.
-  
-  try {
-    // Try rsvg-convert first (from librsvg, installable via brew)
-    execSync(`rsvg-convert -w ${size} -h ${size} "${svgFile}" -o "${pngFile}"`, { stdio: 'pipe' });
-    return true;
-  } catch {
-    // Fall back to qlmanage (macOS built-in, produces thumbnails)
-    try {
-      const tmpDir = join(assetsDir, '.tmp');
-      ensureDir(tmpDir);
-      execSync(`qlmanage -t -s ${size} -o "${tmpDir}" "${svgFile}"`, { stdio: 'pipe' });
-      const generatedFile = join(tmpDir, 'icon.svg.png');
-      if (existsSync(generatedFile)) {
-        execSync(`sips -z ${size} ${size} "${generatedFile}" --out "${pngFile}"`, { stdio: 'pipe' });
-        execSync(`rm -rf "${tmpDir}"`, { stdio: 'pipe' });
-        return true;
-      }
-    } catch {}
+function generateIco() {
+  const sizes = [16, 32, 48, 256];
+  const pngBuffers = sizes.map(s => readFileSync(join(assetsDir, `icon-${s}.png`)));
+
+  const headerSize = 6;
+  const dirEntrySize = 16;
+  const dirSize = dirEntrySize * sizes.length;
+  let dataOffset = headerSize + dirSize;
+
+  const header = Buffer.alloc(headerSize);
+  header.writeUInt16LE(0, 0);
+  header.writeUInt16LE(1, 2);
+  header.writeUInt16LE(sizes.length, 4);
+
+  const dirEntries = Buffer.alloc(dirSize);
+  for (let i = 0; i < sizes.length; i++) {
+    const off = i * dirEntrySize;
+    const s = sizes[i];
+    dirEntries.writeUInt8(s >= 256 ? 0 : s, off);
+    dirEntries.writeUInt8(s >= 256 ? 0 : s, off + 1);
+    dirEntries.writeUInt8(0, off + 2);
+    dirEntries.writeUInt8(0, off + 3);
+    dirEntries.writeUInt16LE(1, off + 4);
+    dirEntries.writeUInt16LE(32, off + 6);
+    dirEntries.writeUInt32LE(pngBuffers[i].length, off + 8);
+    dirEntries.writeUInt32LE(dataOffset, off + 12);
+    dataOffset += pngBuffers[i].length;
   }
-  return false;
+
+  const ico = Buffer.concat([header, dirEntries, ...pngBuffers]);
+  writeFileSync(join(assetsDir, 'icon.ico'), ico);
+  console.log(`  icon.ico (${ico.length} bytes)`);
 }
 
-async function main() {
-  ensureDir(assetsDir);
-  ensureDir(iconsetDir);
-
-  console.log('Generating PNG icons from SVG...');
-
-  // Generate all PNG sizes
-  for (const size of pngSizes) {
-    const outFile = join(assetsDir, `icon-${size}.png`);
-    if (svgToPng(svgPath, outFile, size)) {
-      console.log(`  icon-${size}.png`);
-    } else {
-      console.warn(`  SKIP icon-${size}.png (no SVG converter found)`);
-    }
-  }
-
-  // Copy the 512px as the main icon.png
-  const mainIcon = join(assetsDir, 'icon-512.png');
-  if (existsSync(mainIcon)) {
-    execSync(`cp "${mainIcon}" "${join(assetsDir, 'icon.png')}"`);
-    console.log('  icon.png (512x512)');
-  }
-
-  // Generate macOS iconset
-  console.log('\nGenerating macOS iconset...');
+function generateIcns() {
   const iconsetPairs = [
     [16, 'icon_16x16.png'],
     [32, 'icon_16x16@2x.png'],
@@ -89,18 +68,26 @@ async function main() {
     const src = join(assetsDir, `icon-${size}.png`);
     const dst = join(iconsetDir, name);
     if (existsSync(src)) {
-      execSync(`cp "${src}" "${dst}"`);
+      copyFileSync(src, dst);
     }
   }
 
-  // Generate .icns using iconutil
   try {
     const icnsPath = join(assetsDir, 'icon.icns');
     execSync(`iconutil -c icns "${iconsetDir}" -o "${icnsPath}"`, { stdio: 'pipe' });
     console.log('  icon.icns');
-  } catch (e) {
-    console.warn('  SKIP icon.icns (iconutil failed)');
+  } catch {
+    console.warn('  SKIP icon.icns (iconutil not available — macOS only)');
   }
+}
+
+async function main() {
+  ensureDir(iconsetDir);
+
+  console.log('Generating platform icons from PNGs...');
+
+  generateIco();
+  generateIcns();
 
   console.log('\nDone! Icons are in assets/');
 }

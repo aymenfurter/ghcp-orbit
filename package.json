@@ -20,7 +20,10 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "author": "Aymen",
+  "author": {
+    "name": "Aymen",
+    "email": "aymen@orbit.dev"
+  },
   "license": "MIT",
   "build": {
     "appId": "dev.orbit.app",
@@ -86,7 +89,7 @@
       "backgroundColor": "#0d1117"
     },
     "win": {
-      "icon": "assets/icon.png",
+      "icon": "assets/icon.ico",
       "target": [
         "nsis",
         "portable"
@@ -95,8 +98,8 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
-      "installerIcon": "assets/icon.png",
-      "uninstallerIcon": "assets/icon.png"
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico"
     },
     "linux": {
       "icon": "assets",
