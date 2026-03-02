@@ -1,0 +1,127 @@
+{
+  "name": "orbit",
+  "version": "1.0.0",
+  "description": "Orbit — Development Intelligence Dashboard",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "postinstall": "node scripts/patch-electron-name.mjs",
+    "start": "npm run build && electron .",
+    "dev": "./scripts/dev.sh",
+    "icons": "node scripts/generate-icons.mjs",
+    "clean": "./scripts/clean.sh",
+    "preflight": "./scripts/preflight.sh",
+    "pack": "./scripts/package.sh --dir",
+    "dist": "./scripts/package.sh",
+    "dist:mac": "./scripts/package.sh --mac",
+    "dist:win": "./scripts/package.sh --win",
+    "dist:linux": "./scripts/package.sh --linux",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "author": "Aymen",
+  "license": "MIT",
+  "build": {
+    "appId": "dev.orbit.app",
+    "productName": "Orbit",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/icon.png"
+    ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": [
+          "icon.*",
+          "icon-*.png"
+        ]
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "assets/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "darkModeSupport": true,
+      "hardenedRuntime": true
+    },
+    "dmg": {
+      "title": "Orbit",
+      "iconSize": 80,
+      "contents": [
+        {
+          "x": 170,
+          "y": 200
+        },
+        {
+          "x": 430,
+          "y": 200,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 600,
+        "height": 400
+      },
+      "backgroundColor": "#0d1117"
+    },
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "assets/icon.png",
+      "uninstallerIcon": "assets/icon.png"
+    },
+    "linux": {
+      "icon": "assets",
+      "category": "Development",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^8.56.1",
+    "@typescript-eslint/parser": "^8.56.1",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.0",
+    "eslint": "^10.0.2",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.56.1",
+    "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "@github/copilot-sdk": "^0.1.29",
+    "chart.js": "^4.4.0"
+  }
+}
