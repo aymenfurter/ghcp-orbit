@@ -109,19 +109,19 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^20.11.0",
+    "@types/node": "^25.3.3",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
-    "electron": "^33.0.0",
-    "electron-builder": "^25.1.8",
-    "esbuild": "^0.24.0",
+    "electron": "^40.6.1",
+    "electron-builder": "^26.8.1",
+    "esbuild": "^0.27.3",
     "eslint": "^10.0.2",
-    "typescript": "^5.5.0",
+    "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
     "vitest": "^4.0.18"
   },
   "dependencies": {
     "@github/copilot-sdk": "^0.1.29",
-    "chart.js": "^4.4.0"
+    "chart.js": "^4.5.1"
   }
 }
