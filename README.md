@@ -4,123 +4,157 @@
 
 # Orbit
 
-**Development Intelligence Dashboard for GitHub Copilot**
-
-A desktop analytics tool that surfaces GitHub Copilot usage patterns from local VS Code log files.
+**Are you actually good at agentic coding? Find out.**
 
 [![Electron](https://img.shields.io/badge/Electron-33-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey)]()
 
----
-
-*Read-only. Local-first. No telemetry.*
-
 </div>
 
 <br />
 
-Orbit parses Copilot Chat session logs stored in VS Code's `workspaceStorage` directories (both Stable and Insiders editions) and presents the data through a set of focused analytics pages. It never modifies or uploads your data.
+I keep getting asked the same question: **"How do I become a better agentic developer?"**
 
-## Features
+The honest answer is that most people have no idea how they actually use AI coding tools. They *think* they're prompting well, using the right models, and giving the agent enough autonomy -- but they've never measured any of it.
+
+**Orbit fixes that.** It reads your local GitHub Copilot Chat logs from VS Code, runs 22 deterministic and AI-powered checks against your real usage data, and tells you exactly where you're wasting tokens, picking wrong models, under-delegating to agents, or repeating work that should be automated.
+
+No surveys. No self-reporting. Just your actual behavior, analyzed.
+
+<div align="center">
+<img src="assets/dashboard.png" alt="Orbit Dashboard" width="800" />
+</div>
+
+<br />
+
+> **100% local. Read-only. Zero telemetry. Your data never leaves your machine.**
+
+---
+
+## Why This Exists
+
+Everyone talks about "prompting better" but nobody has data. Orbit gives you that data. It answers questions like:
+
+- **Am I using the right model for the right task?** Bug fixes on GPT-4o-mini? Features on a deprecated model? Orbit flags it with specific sessions and examples.
+- **Am I giving the agent enough autonomy?** If the AI keeps saying "please run this command" and you keep copy-pasting, you're doing it wrong. Orbit detects these patterns.
+- **Am I wasting tokens on things a script could do?** Starting the dev server, running linters, checking build status -- Orbit finds repeated simple prompts and tells you to automate them.
+- **Is my context management hurting quality?** 80-message mega-sessions degrade AI output. Orbit tracks session hygiene and tells you when to start fresh.
+- **Am I actually using Copilot's full feature set?** Slash commands, file references, MCP servers, multi-agent delegation, planning mode -- most developers use less than 30% of what's available.
+
+---
+
+## What Orbit Analyzes
+
+### 12 Deterministic Behavior Checks (Local, No Network)
+
+Every check produces a 0-100 score, a severity level, and specific actionable tips with real examples from your sessions:
+
+| Check | What It Measures |
+|---|---|
+| **Model Diversity** | Are you stuck on one model or exploring the right tool for each job? |
+| **Model-Task Alignment** | Strong models for complex work, light models for docs -- are you matching correctly? |
+| **Planning-First Usage** | Do you start complex sessions with a plan, or just dive in? |
+| **Session Length Hygiene** | Are mega-sessions (50+ messages) degrading your AI output quality? |
+| **Slash Command Adoption** | Are you using /explain, /fix, /tests, or typing everything longhand? |
+| **Feature Breadth** | Tools, file refs, agents, context variables -- how much of Copilot do you actually use? |
+| **Parallelism** | Are you running multiple sessions concurrently or bottlenecking on one? |
+| **Cancellation Rate** | High cancel rates signal poor prompting or wrong model selection. |
+| **Tool Diversity** | Are you leveraging the full range of agent tools? |
+| **Response Efficiency** | Time spent waiting vs. productive output -- how efficient is each interaction? |
+| **File Context Usage** | Are you giving the AI file references for precision, or making it guess? |
+| **Session Size Distribution** | Healthy distribution vs. too many tiny or bloated sessions. |
+
+### 10 AI-Powered Deep Checks (via GitHub Copilot SDK)
+
+These go beyond what deterministic rules can catch. The AI agent explores your session data using purpose-built tools, forms hypotheses about your behavior, and validates them against the evidence:
+
+| Check | What It Finds |
+|---|---|
+| **Multi-Agent Delegation** | Are you running work in parallel across agents, or waiting idle while one agent works? |
+| **Code Cleanup & Review** | Do you ask the AI to review and improve code, or only generate new code? |
+| **Context Enrichment** | MCP servers, doc fetching, structured context -- or still pasting code manually? |
+| **Markdown & Spec-Driven Dev** | What's your markdown-to-code ratio? Are you doing spec-driven development? |
+| **Right Model for Right Task** | Opus/o3/Gemini Pro for features, lighter models for docs -- with specific session examples. |
+| **Session Hygiene** | Are you creating new sessions for new tasks, or relying on auto-compaction? |
+| **Agent Autonomy** | Sessions where the user had to manually copy-paste commands the agent should have run. |
+| **Repeated Patterns** | Simple prompts that appear over and over ("how do I start the server?") that should be scripts. |
+| **Tool Overload** | Sessions with too many active MCP servers causing performance degradation. |
+| **Outdated Model Usage** | Still using GPT-4o-mini, o1-mini, or other deprecated models? Time to upgrade. |
+
+The AI agent doesn't just flag issues -- it cites the specific sessions and prompts where the problem occurred, and tells you what you should have done instead.
+
+---
+
+## 10 Analytics Pages
 
 <table>
   <tr>
-    <td><strong>Dashboard</strong></td>
-    <td>KPI summary, daily activity chart, top workspaces, hourly heatmap</td>
+    <td width="180"><strong>Dashboard</strong></td>
+    <td>KPI cards, daily activity trends, top workspaces, hourly heatmap, estimated cost</td>
   </tr>
   <tr>
     <td><strong>Patterns</strong></td>
-    <td>7x24 heatmap, hourly work-type distribution, work-type breakdown</td>
+    <td>7x24 activity heatmap, hourly work-type distribution, aggregate work-type breakdown</td>
   </tr>
   <tr>
     <td><strong>Production</strong></td>
-    <td>AI vs user code comparison, daily timeline, language and workspace breakdown</td>
+    <td>AI-generated vs. human-written code, daily output timeline, language and workspace splits</td>
   </tr>
   <tr>
     <td><strong>Consumption</strong></td>
-    <td>Cost trends (daily/weekly/monthly), model usage table, cumulative tracking</td>
+    <td>Daily/weekly/monthly cost trends, per-model usage table, cumulative spend tracking</td>
   </tr>
   <tr>
     <td><strong>Burndown</strong></td>
-    <td>Monthly budget tracking with burndown chart and daily consumption bars</td>
+    <td>Monthly budget tracking with burndown chart -- Pro, Pro+, Business, and Enterprise plans</td>
   </tr>
   <tr>
     <td><strong>Timeline</strong></td>
-    <td>Swim-lane Gantt view of concurrent sessions with day/week/month modes</td>
+    <td>Swim-lane Gantt chart of concurrent sessions with day/week/month zoom</td>
   </tr>
   <tr>
     <td><strong>Journey</strong></td>
-    <td>Per-workspace chronological story: work types, tech stack, model adoption</td>
+    <td>Per-workspace narrative: how your work types, tech stack, and model choices evolved</td>
   </tr>
   <tr>
     <td><strong>Sessions</strong></td>
-    <td>Paginated session list with message thread detail view</td>
+    <td>Browse all sessions with full message threads, code blocks, and metadata</td>
   </tr>
   <tr>
     <td><strong>Recommendations</strong></td>
-    <td>12 local rule-based behavior checks with radar chart</td>
+    <td>12 local behavior checks with radar chart visualization</td>
   </tr>
   <tr>
     <td><strong>Agentic Insights</strong></td>
-    <td>Optional AI-powered analysis via the Copilot SDK (requires GitHub auth)</td>
+    <td>10 AI-powered deep analysis checks with hypothesis-driven session exploration</td>
   </tr>
 </table>
 
-## Tech Stack
+> See the [full documentation](docs/README.md) for screenshots of every page.
 
-<div align="center">
+---
 
-| | Technology | Role |
-|---|---|---|
-| **Runtime** | Electron | Context isolation, preload scripts |
-| **Language** | Vanilla TypeScript | No UI framework |
-| **Charts** | Chart.js | All visualizations |
-| **Bundler** | esbuild | Target ES2022 |
-| **Packager** | electron-builder | Cross-platform distribution |
-
-</div>
-
-## Getting Started
+## Quick Start
 
 ### Prerequisites
 
 - [Node.js](https://nodejs.org/) v18+
-- npm (ships with Node.js)
+- VS Code with GitHub Copilot (that's where the logs come from)
 
-### Install
+### Install and Run
 
 ```bash
 git clone <repo-url>
 cd orbit
 npm install
-```
-
-### Develop
-
-```bash
 npm run dev
 ```
 
-Runs esbuild then launches Electron with the `--dev` flag.
+That's it. Orbit automatically discovers your Copilot Chat logs from VS Code and VS Code Insiders.
 
-### Build
-
-```bash
-npm run build    # production build only
-npm start        # build and launch
-```
-
-### Package
-
-```bash
-npm run preflight            # verify assets and config
-npm run icons                # generate icon sets from assets/icon.svg
-npm run dist                 # package for current platform
-```
-
-Platform-specific builds:
+### Build for Distribution
 
 ```bash
 npm run dist:mac             # macOS (dmg + zip)
@@ -128,30 +162,11 @@ npm run dist:win             # Windows (nsis + portable)
 npm run dist:linux           # Linux (AppImage + deb)
 ```
 
-Output is written to `./release/`.
-
-## Scripts Reference
-
-<div align="center">
-
-| Command | Description |
-|---|---|
-| `npm run dev` | Start in dev mode with live rebuilds |
-| `npm run build` | Production build without launching |
-| `npm start` | Build and launch |
-| `npm run dist` | Package for current platform |
-| `npm run clean` | Remove `dist/`, `release/`, and generated icons |
-| `npm run preflight` | Verify assets, config, and deps before packaging |
-| `npm run icons` | Generate platform icon sets from source SVG |
-| `npm run pack` | Unpacked directory build for testing |
-
-</div>
+---
 
 ## How It Works
 
-Orbit discovers VS Code Copilot Chat log files from standard storage locations:
-
-<div align="center">
+Orbit reads Copilot Chat session logs from VS Code's standard `workspaceStorage` directories:
 
 | Platform | Path |
 |---|---|
@@ -159,21 +174,74 @@ Orbit discovers VS Code Copilot Chat log files from standard storage locations:
 | Linux | `~/.config/Code/` and `Code - Insiders/` |
 | Windows | `%APPDATA%/Code/` and `Code - Insiders/` |
 
-</div>
-
-Log parsing runs in a **worker thread** to keep the UI responsive. Parsed sessions are cached to disk using a SHA-256 fingerprint and invalidated automatically when files change. All analytics are computed locally and in-memory -- no data leaves your machine.
-
-## Privacy and Security
-
-- **Local-only** -- no telemetry, no cloud sync, no external calls from core functionality.
-- **Read-only** -- Orbit never modifies or deletes VS Code log files.
-- **Sandboxed** -- Electron runs with `contextIsolation: true` and `nodeIntegration: false`.
-- **AI opt-in** -- The optional Copilot SDK agent is the only feature that communicates externally. It sends only aggregated statistics (never raw chat messages, code, or file paths) and must be explicitly triggered.
-
-<div align="center">
+- Log parsing runs in a **worker thread** so the UI never freezes
+- Parsed sessions are **cached to disk** using SHA-256 fingerprints and auto-invalidated on changes
+- All analytics are computed **locally and in-memory**
+- Supports both `.json` and `.jsonl` session formats
+- Work types (feature, bug fix, refactor, docs, test) are classified via deterministic regex -- no LLM calls
 
 ---
 
+## The Agentic Insights Engine
+
+The optional AI analysis (powered by `@github/copilot-sdk`) doesn't just run static rules. It works like this:
+
+1. **Purpose-built tools** expose slices of your analytics data -- model usage summaries, prompt quality metrics, session patterns, code review habits, hourly distributions, and more.
+2. **The AI agent forms hypotheses** about your behavior ("this user might not be delegating to multiple agents") and then **validates them against your actual session data** using those tools.
+3. **Only confirmed findings are reported.** If the agent doesn't find strong evidence of an issue, it stays silent. No false alarms.
+4. **Results are cached** with timestamps so you don't re-run expensive analysis unnecessarily.
+
+The agent sends only aggregated statistics -- never raw chat messages, code, or file paths. It requires GitHub authentication and must be explicitly triggered.
+
+---
+
+## Privacy and Security
+
+- **Local-only** -- zero telemetry, zero cloud sync, zero tracking
+- **Read-only** -- Orbit never modifies or deletes any VS Code files
+- **Sandboxed** -- Electron with `contextIsolation: true` and `nodeIntegration: false`
+- **AI is opt-in** -- the Copilot SDK agent is the only feature that makes external calls, and it only sends aggregate stats
+
+---
+
+## Tech Stack
+
+| Technology | Role |
+|---|---|
+| Electron | Desktop runtime with context isolation |
+| Vanilla TypeScript | No UI framework, no bloat |
+| Chart.js | All visualizations |
+| esbuild | Fast builds targeting ES2022 |
+| `@github/copilot-sdk` | Optional AI-powered analysis |
+| electron-builder | Cross-platform packaging |
+
+---
+
+## Scripts Reference
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Dev mode with live rebuilds |
+| `npm run build` | Production build |
+| `npm start` | Build and launch |
+| `npm run dist` | Package for current platform |
+| `npm run clean` | Remove build artifacts |
+| `npm run preflight` | Verify everything before packaging |
+| `npm run icons` | Generate platform icon sets from SVG |
+| `npm test` | Run tests |
+
+---
+
+## Contributing
+
+Orbit is built for developers who want to get better at working with AI coding tools. If you have ideas for new checks, analytics pages, or agent tools -- PRs are welcome.
+
+---
+
+<div align="center">
+
 <sub>MIT License</sub>
+
+<sub>This project is not affiliated with, endorsed by, or sponsored by GitHub, Inc. or Microsoft Corporation. "GitHub Copilot" is a trademark of GitHub, Inc.</sub>
 
 </div>
