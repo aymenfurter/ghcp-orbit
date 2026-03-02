@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Orbit — Development Intelligence Dashboard",
   "main": "dist/main/index.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "build": "node build.mjs",
     "postinstall": "node scripts/patch-electron-name.mjs",
