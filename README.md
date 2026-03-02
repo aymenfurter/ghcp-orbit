@@ -68,71 +68,17 @@ Every check produces a 0-100 score, a severity level, and specific actionable ti
 
 ### 10 AI-Powered Deep Checks (via GitHub Copilot SDK)
 
-These go beyond what deterministic rules can catch. The AI agent explores your session data using purpose-built tools, forms hypotheses about your behavior, and validates them against the evidence:
+The AI agent explores your session data with purpose-built tools, forms a hypothesis, and validates it against evidence before reporting anything. Checks cover: multi-agent delegation, code review habits, MCP/doc context enrichment, markdown and spec-driven dev, model-task matching, session hygiene, agent autonomy gaps, repeated automatable prompts, tool overload, and outdated model usage.
 
-| Check | What It Finds |
-|---|---|
-| **Multi-Agent Delegation** | Are you running work in parallel across agents, or waiting idle while one agent works? |
-| **Code Cleanup & Review** | Do you ask the AI to review and improve code, or only generate new code? |
-| **Context Enrichment** | MCP servers, doc fetching, structured context -- or still pasting code manually? |
-| **Markdown & Spec-Driven Dev** | What's your markdown-to-code ratio? Are you doing spec-driven development? |
-| **Right Model for Right Task** | Opus/o3/Gemini Pro for features, lighter models for docs -- with specific session examples. |
-| **Session Hygiene** | Are you creating new sessions for new tasks, or relying on auto-compaction? |
-| **Agent Autonomy** | Sessions where the user had to manually copy-paste commands the agent should have run. |
-| **Repeated Patterns** | Simple prompts that appear over and over ("how do I start the server?") that should be scripts. |
-| **Tool Overload** | Sessions with too many active MCP servers causing performance degradation. |
-| **Outdated Model Usage** | Still using GPT-4o-mini, o1-mini, or other deprecated models? Time to upgrade. |
-
-The AI agent doesn't just flag issues -- it cites the specific sessions and prompts where the problem occurred, and tells you what you should have done instead.
+Each finding is backed by specific sessions and tells you what you should have done instead.
 
 ---
 
-## 10 Analytics Pages
+## Pages
 
-<table>
-  <tr>
-    <td width="180"><strong>Dashboard</strong></td>
-    <td>KPI cards, daily activity trends, top workspaces, hourly heatmap, estimated cost</td>
-  </tr>
-  <tr>
-    <td><strong>Patterns</strong></td>
-    <td>7x24 activity heatmap, hourly work-type distribution, aggregate work-type breakdown</td>
-  </tr>
-  <tr>
-    <td><strong>Production</strong></td>
-    <td>AI-generated vs. human-written code, daily output timeline, language and workspace splits</td>
-  </tr>
-  <tr>
-    <td><strong>Consumption</strong></td>
-    <td>Daily/weekly/monthly cost trends, per-model usage table, cumulative spend tracking</td>
-  </tr>
-  <tr>
-    <td><strong>Burndown</strong></td>
-    <td>Monthly budget tracking with burndown chart -- Pro, Pro+, Business, and Enterprise plans</td>
-  </tr>
-  <tr>
-    <td><strong>Timeline</strong></td>
-    <td>Swim-lane Gantt chart of concurrent sessions with day/week/month zoom</td>
-  </tr>
-  <tr>
-    <td><strong>Journey</strong></td>
-    <td>Per-workspace narrative: how your work types, tech stack, and model choices evolved</td>
-  </tr>
-  <tr>
-    <td><strong>Sessions</strong></td>
-    <td>Browse all sessions with full message threads, code blocks, and metadata</td>
-  </tr>
-  <tr>
-    <td><strong>Recommendations</strong></td>
-    <td>12 local behavior checks with radar chart visualization</td>
-  </tr>
-  <tr>
-    <td><strong>Agentic Insights</strong></td>
-    <td>10 AI-powered deep analysis checks with hypothesis-driven session exploration</td>
-  </tr>
-</table>
+Dashboard, Patterns, Production, Consumption, Burndown, Timeline, Journey, Sessions, Recommendations, Agentic Insights.
 
-> See the [full documentation](docs/README.md) for screenshots of every page.
+> See the [full documentation](docs/README.md) for details and screenshots.
 
 ---
 
