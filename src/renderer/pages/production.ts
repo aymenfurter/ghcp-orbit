@@ -60,18 +60,47 @@ export async function renderProduction(container: HTMLElement): Promise<void> {
 
   // Daily timeline
   if (data.dailyTimeline && data.dailyTimeline.labels.length) {
+    const aiLoc: number[] = data.dailyTimeline.aiLoc;
+    const userLoc: number[] = data.dailyTimeline.userLoc;
+    const totals = aiLoc.map((v: number, i: number) => v + userLoc[i]);
+
+    // Moving average trendline (window adapts to data size)
+    const n = totals.length;
+    const window = Math.max(3, Math.min(7, Math.round(n / 8)));
+    const trendData = totals.map((_: number, i: number) => {
+      const start = Math.max(0, i - Math.floor(window / 2));
+      const end = Math.min(n, i + Math.ceil(window / 2) + 1);
+      let sum = 0;
+      for (let j = start; j < end; j++) sum += totals[j];
+      return Math.round(sum / (end - start));
+    });
+
     trackChart(new Chart(document.getElementById('chart-daily-prod') as HTMLCanvasElement, {
       type: 'bar',
       data: {
         labels: data.dailyTimeline.labels,
         datasets: [
-          { label: 'AI LoC', data: data.dailyTimeline.aiLoc, backgroundColor: 'rgba(63,185,80,0.6)' },
-          { label: 'User LoC', data: data.dailyTimeline.userLoc, backgroundColor: 'rgba(88,166,255,0.6)' },
+          { label: 'AI LoC', data: aiLoc, backgroundColor: 'rgba(63,185,80,0.6)' },
+          { label: 'User LoC', data: userLoc, backgroundColor: 'rgba(88,166,255,0.6)' },
+          {
+            label: 'Trend (Total LoC)',
+            data: trendData,
+            type: 'line',
+            borderColor: 'rgba(255,180,50,0.9)',
+            borderWidth: 2,
+            borderDash: [6, 3],
+            pointRadius: 0,
+            fill: false,
+            stack: undefined as unknown as string,
+          },
         ],
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        scales: { x: { stacked: true, ticks: { maxTicksLimit: 20 }, grid: { display: false } }, y: { stacked: true, beginAtZero: true } },
+        scales: {
+          x: { stacked: true, ticks: { maxTicksLimit: 20 }, grid: { display: false } },
+          y: { stacked: true, beginAtZero: true },
+        },
         plugins: { legend: { position: 'top' } },
       },
     }));
