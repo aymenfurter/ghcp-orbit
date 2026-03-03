@@ -6,7 +6,7 @@ import { Worker } from 'worker_threads';
 import { parseAllLogs, ParseResult } from './parser';
 import { Analyzer } from './analyzer';
 import { runAllAgentChecks, getAgentChecks, stopAgent } from './agent';
-import { IPC, BurndownConfig, Session } from './types';
+import { IPC, BurndownConfig, Session, RedactSettings } from './types';
 
 // Prevent crash when parent terminal disconnects (write EIO on stdout/stderr)
 for (const stream of [process.stdout, process.stderr]) {
@@ -44,7 +44,29 @@ function findLogsDirs(): string[] {
   return dirs;
 }
 
+/* ---- Redact settings ---- */
+
+function getRedactPath(): string {
+  return path.join(app.getPath('userData'), 'redact-settings.json');
+}
+
+function loadRedactSettings(): RedactSettings {
+  try {
+    const raw = fs.readFileSync(getRedactPath(), 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return { hiddenWorkspaces: [], hiddenMcpServers: [], hiddenSkills: [], hiddenAgentModes: [] };
+  }
+}
+
+function saveRedactSettings(settings: RedactSettings): void {
+  fs.writeFileSync(getRedactPath(), JSON.stringify(settings, null, 2), 'utf-8');
+}
+
 /* ---- Session cache ---- */
+
+// Bump this version whenever the session schema changes to invalidate old caches
+const CACHE_VERSION = 'v4';
 
 function getCachePath(): string {
   return path.join(app.getPath('userData'), 'session-cache.json');
@@ -52,6 +74,7 @@ function getCachePath(): string {
 
 function computeFingerprint(dirs: string[]): string {
   const hash = crypto.createHash('sha256');
+  hash.update(CACHE_VERSION);
   for (const dir of dirs.slice().sort()) {
     hash.update(dir);
     try {
@@ -224,6 +247,7 @@ function registerIPC() {
   ipcMain.handle(IPC.GET_BURNDOWN, safe((cfg: BurndownConfig) => analyzer.getBurndown(cfg)));
   ipcMain.handle(IPC.GET_RECOMMENDATIONS, safe((ws) => analyzer.getRecommendations(ws || '')));
   ipcMain.handle(IPC.GET_TIMELINE_ACTIVITY, safe((ws) => analyzer.getTimelineActivity(ws)));
+  ipcMain.handle(IPC.GET_TOOLING, safe((f) => analyzer.getTooling(f || {})));
   ipcMain.handle(IPC.GET_LOGS_DIRS, safe(() => logsDirs));
 
   // Agentic results persistence
@@ -278,6 +302,23 @@ function registerIPC() {
     }
     return null;
   });
+
+  // Redact settings
+  ipcMain.handle(IPC.GET_REDACT_SETTINGS, safe(() => loadRedactSettings()));
+  ipcMain.handle(IPC.SAVE_REDACT_SETTINGS, safe((settings: RedactSettings) => {
+    saveRedactSettings(settings);
+    return true;
+  }));
+  ipcMain.handle(IPC.GET_AVAILABLE_ITEMS, safe(() => {
+    const workspaces = analyzer.getWorkspaces();
+    const tooling = analyzer.getTooling({});
+    return {
+      workspaces,
+      mcpServers: (tooling.mcpServers || []).map((s: any) => s.name),
+      skills: (tooling.skills || []).map((s: any) => s.name),
+      agentModes: (tooling.agentModes || []).map((m: any) => m.label),
+    };
+  }));
 }
 
 app.setName('Orbit');

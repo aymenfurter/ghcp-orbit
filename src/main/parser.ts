@@ -263,6 +263,7 @@ function parseSessionFile(sessionFile: string, wsId: string, wsName: string): Se
     sessionId: data.sessionId || path.basename(sessionFile, path.extname(sessionFile)),
     workspaceId: wsId,
     workspaceName: wsName,
+    location: data.initialLocation || 'panel',
     creationDate: creationTs,
     lastMessageDate: lastMsgTs,
     requestCount: requests.length,
@@ -289,9 +290,56 @@ function parseSessionFile(sessionFile: string, wsId: string, wsName: string): Se
     const agentInfo = req.agent || {};
     const agentName = typeof agentInfo === 'object'
       ? (agentInfo.extensionDisplayName || agentInfo.id || '') : '';
+    const agentMode = typeof agentInfo === 'object'
+      ? (agentInfo.id || '') : '';
     const userCode = extractCodeBlocks(msgText);
     const aiCode = extractCodeBlocks(respText);
     const modelId: string = req.modelId || '';
+
+    // Slash command
+    const slashCmdObj = req.slashCommand || {};
+    const slashCommand = (typeof slashCmdObj === 'object' && slashCmdObj.name) ? slashCmdObj.name : '';
+
+    // Variable data (used for variable kinds + referenced files)
+    const vd = req.variableData || {};
+
+    // Variable kinds
+    const variableKinds: Record<string, number> = {};
+    const vdVars = (typeof vd === 'object' ? vd.variables : []) || [];
+    for (const v of vdVars) {
+      if (typeof v === 'object' && v && v.kind) {
+        variableKinds[v.kind] = (variableKinds[v.kind] || 0) + 1;
+      }
+    }
+
+    // Custom instructions / prompt files from content references
+    const customInstructions: string[] = [];
+    for (const cr of (req.contentReferences || [])) {
+      if (typeof cr !== 'object' || !cr) continue;
+      const ref = cr.reference;
+      if (typeof ref !== 'object' || !ref) continue;
+      const ext = (ref.external || ref.fsPath || '') as string;
+      const lower = ext.toLowerCase();
+      if (lower.includes('.instructions.md') || lower.includes('copilot-instructions') || lower.includes('.prompt.md') || lower.includes('agents.md')) {
+        const parts = ext.split('/');
+        const fname = parts[parts.length - 1] || ext;
+        if (fname && !customInstructions.includes(fname)) customInstructions.push(fname);
+      }
+    }
+
+    // Extract skills from variable data values
+    const skillsUsed: string[] = [];
+    const skillRe = /<skill>\s*<name>(.*?)<\/name>/g;
+    for (const v of vdVars) {
+      if (typeof v === 'object' && v && typeof v.value === 'string' && v.value.includes('<skill>')) {
+        let sm: RegExpExecArray | null;
+        while ((sm = skillRe.exec(v.value)) !== null) {
+          const sn = sm[1].trim();
+          if (sn && !skillsUsed.includes(sn) && !sn.includes('ai_toolkit')) skillsUsed.push(sn);
+        }
+        skillRe.lastIndex = 0;
+      }
+    }
 
     // Extract tools used
     const toolsUsed: string[] = [];
@@ -324,9 +372,8 @@ function parseSessionFile(sessionFile: string, wsId: string, wsName: string): Se
       }
     }
 
-    // Referenced files
+    // Referenced files (using vd already declared above)
     const referencedFiles: string[] = [];
-    const vd = req.variableData || {};
     if (typeof vd === 'object') {
       for (const v of (vd.variables || [])) {
         if (typeof v === 'object' && v && (v.kind === 'file' || v.kind === 'directory')) {
@@ -342,7 +389,8 @@ function parseSessionFile(sessionFile: string, wsId: string, wsName: string): Se
       messageText: msgText,
       responseText: respText,
       isCanceled: req.isCanceled || false,
-      agentName, modelId, toolsUsed, editedFiles, referencedFiles,
+      agentName, agentMode, modelId, toolsUsed, editedFiles, referencedFiles,
+      slashCommand, variableKinds, customInstructions, skillsUsed,
       firstProgress: timings.firstProgress ?? null,
       totalElapsed: timings.totalElapsed ?? null,
       messageLength: msgText.length,

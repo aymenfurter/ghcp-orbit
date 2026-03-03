@@ -7,10 +7,15 @@ export interface SessionRequest {
   responseText: string;
   isCanceled: boolean;
   agentName: string;
+  agentMode: string;
   modelId: string;
   toolsUsed: string[];
   editedFiles: string[];
   referencedFiles: string[];
+  slashCommand: string;
+  variableKinds: Record<string, number>;
+  customInstructions: string[];
+  skillsUsed: string[];
   firstProgress: number | null;
   totalElapsed: number | null;
   messageLength: number;
@@ -28,6 +33,7 @@ export interface Session {
   sessionId: string;
   workspaceId: string;
   workspaceName: string;
+  location: string;
   creationDate: number | null;
   lastMessageDate: number | null;
   requestCount: number;
@@ -282,6 +288,54 @@ export interface AgentAnalysisResult {
   evidence: string[];
 }
 
+export interface ToolingData {
+  agentModes: { label: string; count: number; pct: number }[];
+  variableKinds: { kind: string; count: number }[];
+  slashCommands: { name: string; count: number }[];
+  customization: {
+    totalInstructionRefs: number;
+    instructionFiles: { name: string; count: number }[];
+    promptFileUsage: number;
+    promptTextUsage: number;
+    totalRequests: number;
+  };
+  toolCalls: { name: string; count: number }[];
+  mcpServers: { name: string; calls: number; tools: { name: string; count: number }[] }[];
+  skills: { name: string; count: number }[];
+  contextQuality: {
+    fileRefs: number;
+    directoryRefs: number;
+    symbolRefs: number;
+    imageRefs: number;
+    workspaceRefs: number;
+    linkRefs: number;
+    avgRefsPerRequest: number;
+  };
+  modelByMode: { mode: string; models: { model: string; count: number }[] }[];
+  weeklyTrends: {
+    labels: string[];
+    agentModeSeries: Record<string, number[]>;
+    variableKindSeries: Record<string, number[]>;
+    toolCallSeries: Record<string, number[]>;
+    mcpServerSeries: Record<string, number[]>;
+    skillSeries: Record<string, number[]>;
+  };
+}
+
+export interface RedactSettings {
+  hiddenWorkspaces: string[];
+  hiddenMcpServers: string[];
+  hiddenSkills: string[];
+  hiddenAgentModes: string[];
+}
+
+export interface AvailableItems {
+  workspaces: string[];
+  mcpServers: string[];
+  skills: string[];
+  agentModes: string[];
+}
+
 // IPC Channels
 export const IPC = {
   GET_DAILY_ACTIVITY: 'get-daily-activity',
@@ -300,7 +354,11 @@ export const IPC = {
   GET_RECOMMENDATIONS: 'get-recommendations',
   RUN_AGENT_CHECK: 'run-agent-check',
   GET_TIMELINE_ACTIVITY: 'get-timeline-activity',
+  GET_TOOLING: 'get-tooling',
   RELOAD_DATA: 'reload-data',
   SELECT_LOGS_DIR: 'select-logs-dir',
   GET_LOGS_DIRS: 'get-logs-dirs',
+  GET_REDACT_SETTINGS: 'get-redact-settings',
+  SAVE_REDACT_SETTINGS: 'save-redact-settings',
+  GET_AVAILABLE_ITEMS: 'get-available-items',
 } as const;

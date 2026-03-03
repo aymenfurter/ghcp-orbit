@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('orbit', {
   getRecommendations: (ws?: string) => ipcRenderer.invoke('get-recommendations', ws),
   getAgentAnalysis: (ws?: string, model?: string) => ipcRenderer.invoke('get-agent-analysis', ws, model),
   getTimelineActivity: (ws?: string) => ipcRenderer.invoke('get-timeline-activity', ws),
+  getTooling: (f?: any) => ipcRenderer.invoke('get-tooling', f),
   reloadData: () => ipcRenderer.invoke('reload-data'),
   selectLogsDir: () => ipcRenderer.invoke('select-logs-dir'),
   getLogsDirs: () => ipcRenderer.invoke('get-logs-dirs'),
@@ -27,4 +28,7 @@ contextBridge.exposeInMainWorld('orbit', {
   saveAgentResults: (data: any) => ipcRenderer.invoke('save-agent-results', data),
   loadAgentResults: () => ipcRenderer.invoke('load-agent-results'),
   onAgentProgress: (cb: (event: any) => void) => ipcRenderer.on('agent-progress', (_, event) => cb(event)),
+  getRedactSettings: () => ipcRenderer.invoke('get-redact-settings'),
+  saveRedactSettings: (settings: any) => ipcRenderer.invoke('save-redact-settings', settings),
+  getAvailableItems: () => ipcRenderer.invoke('get-available-items'),
 });

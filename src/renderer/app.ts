@@ -10,6 +10,10 @@ import { renderTimeline } from './pages/timeline';
 import { renderJourney } from './pages/journey';
 import { renderSessions } from './pages/sessions';
 import { renderBehavior, renderAgentic } from './pages/recommendations';
+import { renderTooling } from './pages/tooling';
+import { renderSettings } from './pages/settings';
+import { loadRedactSettings, resetRedactCounters, redact } from './redact';
+import { injectZoomButtons, teardownZoom } from './zoom';
 
 Chart.register(...registerables);
 
@@ -41,6 +45,7 @@ declare global {
       getRecommendations: (ws?: string) => Promise<any>;
       getAgentAnalysis: (ws?: string, model?: string) => Promise<any>;
       getTimelineActivity: (ws?: string) => Promise<any>;
+      getTooling: (f?: any) => Promise<any>;
       reloadData: () => Promise<any>;
       selectLogsDir: () => Promise<any>;
       getLogsDirs: () => Promise<any>;
@@ -49,6 +54,9 @@ declare global {
       saveAgentResults: (data: any) => Promise<any>;
       loadAgentResults: () => Promise<any>;
       onAgentProgress: (cb: (event: any) => void) => void;
+      getRedactSettings: () => Promise<any>;
+      saveRedactSettings: (settings: any) => Promise<any>;
+      getAvailableItems: () => Promise<any>;
     };
   }
 }
@@ -133,6 +141,8 @@ const pages: Record<string, PageRenderer> = {
   sessions: renderSessions,
   behavior: renderBehavior,
   agentic: renderAgentic,
+  tooling: renderTooling,
+  settings: renderSettings,
 };
 
 let currentPage = '';
@@ -147,7 +157,9 @@ async function navigateTo(page: string) {
   });
 
   // Clear previous content + charts
+  teardownZoom();
   destroyCharts();
+  resetRedactCounters();
   const content = document.getElementById('content')!;
   content.innerHTML = '<div class="loading-inline"><div class="loading-spinner"></div>Loading...</div>';
   content.scrollTop = 0;
@@ -159,6 +171,7 @@ async function navigateTo(page: string) {
   if (render) {
     try {
       await render(content);
+      injectZoomButtons(content);
     } catch (err) {
       console.error(`Error rendering ${page}:`, err);
       content.innerHTML = `<div class="empty-state"><h3>Error loading page</h3><p>${(err as Error).message}</p></div>`;
@@ -218,6 +231,8 @@ function init() {
   // Wait for data to be parsed
   window.orbit.onDataReady(async (data: any) => {
     console.log(`Orbit: loaded ${data.sessions} sessions from ${data.dirs?.length || 0} directories`);
+    // Load redact settings before rendering any page
+    await loadRedactSettings();
     // Hide loading overlay with fade
     const overlay = document.getElementById('load-overlay');
     if (overlay) overlay.classList.add('hidden');
@@ -240,8 +255,9 @@ async function populateWorkspaceSidebar() {
       for (const ws of workspaces) {
         if (q && !ws.name.toLowerCase().includes(q)) continue;
         const costLabel = ws.cost >= 1 ? `$${ws.cost.toFixed(0)}` : `$${ws.cost.toFixed(2)}`;
-        const name = ws.name.length > 20 ? ws.name.slice(0, 19) + '\u2026' : ws.name;
-        html += `<div class="ws-item${ws.name === globalWorkspace ? ' active' : ''}" data-ws="${escHtml(ws.name)}" title="${escHtml(ws.name)} - ${ws.requests} requests"><span class="ws-name">${escHtml(name)}</span><span class="ws-cost">${costLabel}</span></div>`;
+        const displayName = redact('hiddenWorkspaces', ws.name);
+        const truncName = displayName.length > 20 ? displayName.slice(0, 19) + '\u2026' : displayName;
+        html += `<div class="ws-item${ws.name === globalWorkspace ? ' active' : ''}" data-ws="${escHtml(ws.name)}" title="${escHtml(displayName)} - ${ws.requests} requests"><span class="ws-name">${escHtml(truncName)}</span><span class="ws-cost">${costLabel}</span></div>`;
       }
       wsList.innerHTML = html;
       wsList.querySelectorAll('.ws-item').forEach(el => {

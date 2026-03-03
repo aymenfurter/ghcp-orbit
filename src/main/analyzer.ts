@@ -5,6 +5,7 @@ import {
   CodeProductionData, ConsumptionData, DayTimeline, JourneyData, JourneyEvent,
   SessionList, WorkspaceBreakdown, BurndownData, BurndownConfig,
   RecommendationResult, WorkType, WORK_TYPES, SKU_BUDGETS, TimelineRequest,
+  ToolingData,
 } from './types';
 import { techFromPath, shortPath } from './parser';
 
@@ -64,6 +65,11 @@ function tsToHour(ts: number): number {
 function tsToWeekday(ts: number): number {
   const d = new Date(ts).getDay();
   return d === 0 ? 6 : d - 1; // Monday=0, Sunday=6
+}
+
+function tsToWeekLabel(ts: number): string {
+  const dt = new Date(ts);
+  return `${dt.getFullYear()}-W${String(getISOWeek(dt)).padStart(2, '0')}`;
 }
 
 export class Analyzer {
@@ -942,6 +948,263 @@ export class Analyzer {
       dailyConsumption: { labels, values, cumulative },
       projectedLine, budgetLine,
       status, recommendation,
+    };
+  }
+
+  getTooling(f: DateFilter): ToolingData {
+    const filtered = this.filter(f);
+
+    const agentModeCount = new Map<string, number>();
+    const varKindCount = new Map<string, number>();
+    const slashCmdCount = new Map<string, number>();
+    const toolCallCount = new Map<string, number>();
+    const instructionFileCount = new Map<string, number>();
+    const modelByMode = new Map<string, Map<string, number>>();
+    const mcpServerTools = new Map<string, Map<string, number>>();
+    const skillCount = new Map<string, number>();
+    let promptFileUsage = 0;
+    let promptTextUsage = 0;
+    let totalInstructionRefs = 0;
+    let totalRequests = 0;
+    let fileRefs = 0, directoryRefs = 0, symbolRefs = 0, imageRefs = 0;
+    let workspaceRefs = 0, linkRefs = 0, totalVarRefs = 0;
+
+    // Weekly trends
+    const weeklyAgentMode = new Map<string, Map<string, number>>();
+    const weeklyVarKind = new Map<string, Map<string, number>>();
+    const weeklyToolCall = new Map<string, Map<string, number>>();
+    const weeklyMcpServer = new Map<string, Map<string, number>>();
+    const weeklySkill = new Map<string, Map<string, number>>();
+
+    const AGENT_MODE_LABELS: Record<string, string> = {
+      'github.copilot.editsAgent': 'Agent Mode',
+      'github.copilot.editingSession': 'Edit Mode',
+      'github.copilot.editingSession2': 'Edit Mode v2',
+      'github.copilot.default': 'Chat Panel',
+      'github.copilot.workspace': 'Workspace',
+      'github.copilot.notebook': 'Notebook',
+      'github.copilot.editor': 'Inline Editor',
+      'github.copilot.terminalPanel': 'Terminal',
+      'github.copilot.vscode': 'VS Code',
+      'copilotcli': 'CLI',
+      'copilot-swe-agent': 'SWE Agent',
+      'copilot-cloud-agent': 'Cloud Agent',
+    };
+
+    for (const s of filtered) {
+      for (const r of s.requests) {
+        totalRequests++;
+        const ts = r.timestamp || s.creationDate;
+        const week = ts ? tsToWeekLabel(ts) : '';
+
+        // Agent mode
+        const mode = r.agentMode || '(unknown)';
+        const modeLabel = AGENT_MODE_LABELS[mode] || mode.replace('github.copilot.', '').replace(/\./g, ' ');
+        agentModeCount.set(modeLabel, (agentModeCount.get(modeLabel) || 0) + 1);
+        if (week) {
+          if (!weeklyAgentMode.has(week)) weeklyAgentMode.set(week, new Map());
+          const wm = weeklyAgentMode.get(week)!;
+          wm.set(modeLabel, (wm.get(modeLabel) || 0) + 1);
+        }
+
+        // Model by mode
+        const model = normalizeModelId(r.modelId);
+        if (!modelByMode.has(modeLabel)) modelByMode.set(modeLabel, new Map());
+        const mm = modelByMode.get(modeLabel)!;
+        mm.set(model, (mm.get(model) || 0) + 1);
+
+        // Variable kinds
+        const vk = r.variableKinds || {};
+        for (const [kind, cnt] of Object.entries(vk)) {
+          const n = cnt as number;
+          varKindCount.set(kind, (varKindCount.get(kind) || 0) + n);
+          totalVarRefs += n;
+          if (kind === 'file') fileRefs += n;
+          else if (kind === 'directory') directoryRefs += n;
+          else if (kind === 'symbol') symbolRefs += n;
+          else if (kind === 'image') imageRefs += n;
+          else if (kind === 'workspace') workspaceRefs += n;
+          else if (kind === 'link') linkRefs += n;
+          else if (kind === 'promptFile') promptFileUsage += n;
+          else if (kind === 'promptText') promptTextUsage += n;
+
+          if (week) {
+            if (!weeklyVarKind.has(week)) weeklyVarKind.set(week, new Map());
+            const wv = weeklyVarKind.get(week)!;
+            wv.set(kind, (wv.get(kind) || 0) + n);
+          }
+        }
+
+        // Custom instructions
+        const ci = r.customInstructions || [];
+        for (const fname of ci) {
+          totalInstructionRefs++;
+          instructionFileCount.set(fname, (instructionFileCount.get(fname) || 0) + 1);
+        }
+
+        // Slash commands
+        if (r.slashCommand) {
+          slashCmdCount.set(r.slashCommand, (slashCmdCount.get(r.slashCommand) || 0) + 1);
+        }
+
+        // Tool calls
+        for (const tool of r.toolsUsed) {
+          toolCallCount.set(tool, (toolCallCount.get(tool) || 0) + 1);
+          if (week) {
+            if (!weeklyToolCall.has(week)) weeklyToolCall.set(week, new Map());
+            const wt = weeklyToolCall.get(week)!;
+            wt.set(tool, (wt.get(tool) || 0) + 1);
+          }
+
+          // MCP server extraction from tool name
+          if (tool.startsWith('mcp_')) {
+            const rest = tool.slice(4);
+            const sep = rest.indexOf('_');
+            const server = sep > 0 ? rest.slice(0, sep) : rest;
+            if (!mcpServerTools.has(server)) mcpServerTools.set(server, new Map());
+            mcpServerTools.get(server)!.set(tool, (mcpServerTools.get(server)!.get(tool) || 0) + 1);
+            if (week) {
+              if (!weeklyMcpServer.has(week)) weeklyMcpServer.set(week, new Map());
+              const ws = weeklyMcpServer.get(week)!;
+              ws.set(server, (ws.get(server) || 0) + 1);
+            }
+          }
+        }
+
+        // Skills
+        for (const skill of (r.skillsUsed || [])) {
+          skillCount.set(skill, (skillCount.get(skill) || 0) + 1);
+          if (week) {
+            if (!weeklySkill.has(week)) weeklySkill.set(week, new Map());
+            const wsk = weeklySkill.get(week)!;
+            wsk.set(skill, (wsk.get(skill) || 0) + 1);
+          }
+        }
+      }
+    }
+
+    // Build agent modes array
+    const agentModes = [...agentModeCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, count]) => ({ label, count, pct: totalRequests > 0 ? count / totalRequests : 0 }));
+
+    // Build variable kinds array
+    const variableKinds = [...varKindCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([kind, count]) => ({ kind, count }));
+
+    // Build slash commands
+    const slashCommands = [...slashCmdCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }));
+
+    // Build tool calls
+    const toolCalls = [...toolCallCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }));
+
+    // Build instruction files
+    const instructionFiles = [...instructionFileCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }));
+
+    // Build model by mode
+    const modelByModeArr = [...modelByMode.entries()]
+      .sort((a, b) => b[1].size - a[1].size)
+      .map(([mode, models]) => ({
+        mode,
+        models: [...models.entries()]
+          .filter(([model]) => model !== 'unknown')
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 5)
+          .map(([model, count]) => ({ model, count })),
+      }))
+      .filter(entry => entry.models.length > 0);
+
+    // Build weekly trends
+    const allWeeks = new Set<string>();
+    for (const w of weeklyAgentMode.keys()) allWeeks.add(w);
+    for (const w of weeklyVarKind.keys()) allWeeks.add(w);
+    for (const w of weeklyToolCall.keys()) allWeeks.add(w);
+    const weekLabels = [...allWeeks].sort();
+
+    const topModes = agentModes.slice(0, 5).map(m => m.label);
+    const agentModeSeries: Record<string, number[]> = {};
+    for (const m of topModes) {
+      agentModeSeries[m] = weekLabels.map(w => weeklyAgentMode.get(w)?.get(m) || 0);
+    }
+
+    const topVarKinds = variableKinds.slice(0, 6).map(v => v.kind);
+    const variableKindSeries: Record<string, number[]> = {};
+    for (const k of topVarKinds) {
+      variableKindSeries[k] = weekLabels.map(w => weeklyVarKind.get(w)?.get(k) || 0);
+    }
+
+    // Top tools for trends (excluding very common ones, keep top 6)
+    const topTools = toolCalls.slice(0, 6).map(t => t.name);
+    const toolCallSeries: Record<string, number[]> = {};
+    for (const t of topTools) {
+      toolCallSeries[t] = weekLabels.map(w => weeklyToolCall.get(w)?.get(t) || 0);
+    }
+
+    // Build MCP servers array
+    const mcpServers = [...mcpServerTools.entries()]
+      .map(([name, toolMap]) => ({
+        name,
+        calls: [...toolMap.values()].reduce((a, b) => a + b, 0),
+        tools: [...toolMap.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([tname, count]) => ({ name: tname.replace(`mcp_${name}_`, ''), count })),
+      }))
+      .sort((a, b) => b.calls - a.calls);
+
+    // Build skills array
+    const skills = [...skillCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }));
+
+    // MCP server weekly trends (top 5)
+    const topMcpServers = mcpServers.slice(0, 5).map(s => s.name);
+    const mcpServerSeries: Record<string, number[]> = {};
+    for (const s of topMcpServers) {
+      mcpServerSeries[s] = weekLabels.map(w => weeklyMcpServer.get(w)?.get(s) || 0);
+    }
+
+    // Skills weekly trends (top 5)
+    const topSkills = skills.slice(0, 5).map(s => s.name);
+    const skillSeries: Record<string, number[]> = {};
+    for (const s of topSkills) {
+      skillSeries[s] = weekLabels.map(w => weeklySkill.get(w)?.get(s) || 0);
+    }
+
+    return {
+      agentModes,
+      variableKinds,
+      slashCommands,
+      customization: {
+        totalInstructionRefs,
+        instructionFiles,
+        promptFileUsage,
+        promptTextUsage,
+        totalRequests,
+      },
+      toolCalls,
+      mcpServers,
+      skills,
+      contextQuality: {
+        fileRefs, directoryRefs, symbolRefs, imageRefs,
+        workspaceRefs, linkRefs,
+        avgRefsPerRequest: totalRequests > 0 ? totalVarRefs / totalRequests : 0,
+      },
+      modelByMode: modelByModeArr,
+      weeklyTrends: {
+        labels: weekLabels,
+        agentModeSeries,
+        variableKindSeries,
+        toolCallSeries,
+        mcpServerSeries,
+        skillSeries,
+      },
     };
   }
 
