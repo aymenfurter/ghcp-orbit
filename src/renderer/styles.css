@@ -1640,3 +1640,62 @@ select:focus, input:focus { border-color: var(--accent-blue); }
   font-family: var(--font-mono);
   white-space: nowrap;
 }
+
+/* ---- New page components ---- */
+.btn-primary {
+  background: #1f6feb;
+  color: #fff;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn-primary:hover { background: #388bfd; }
+
+.btn-secondary {
+  background: #21262d;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-secondary:hover { background: #30363d; }
+
+.btn-filter {
+  background: #21262d;
+  color: #8b949e;
+  border: 1px solid #30363d;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-filter:hover { background: #30363d; color: #e6edf3; }
+.btn-filter.active {
+  background: #1f6feb33;
+  color: #58a6ff;
+  border-color: #1f6feb;
+}
+
+.date-input {
+  background: #161b22;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.date-input:focus {
+  border-color: #1f6feb;
+  outline: none;
+}
+
+/* Color utility classes for delta display */
+.green { color: #3fb950; }
+.red { color: #f85149; }

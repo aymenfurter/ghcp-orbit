@@ -1,5 +1,13 @@
 /* Shared type definitions for Argus */
 
+export interface ToolConfirmation {
+  toolId: string;
+  confirmationType: number; // 1=auto-safe, 3=auto-approved-by-settings, 4=manually-confirmed
+  autoApproveScope?: string; // e.g. 'profile' when type=3
+  isTerminal: boolean;
+  commandLine?: string;
+}
+
 export interface SessionRequest {
   requestId: string;
   timestamp: number | null;
@@ -22,6 +30,7 @@ export interface SessionRequest {
   responseLength: number;
   userCode: CodeBlock[];
   aiCode: CodeBlock[];
+  toolConfirmations: ToolConfirmation[];
 }
 
 export interface CodeBlock {
@@ -358,7 +367,59 @@ export const IPC = {
   RELOAD_DATA: 'reload-data',
   SELECT_LOGS_DIR: 'select-logs-dir',
   GET_LOGS_DIRS: 'get-logs-dirs',
+  GET_AUTONOMY: 'get-autonomy',
+  GET_ANTI_PATTERNS: 'get-anti-patterns',
   GET_REDACT_SETTINGS: 'get-redact-settings',
   SAVE_REDACT_SETTINGS: 'save-redact-settings',
   GET_AVAILABLE_ITEMS: 'get-available-items',
 } as const;
+
+/* ---- Agentic Autonomy ---- */
+export interface AutonomyData {
+  totalRequests: number;
+  withToolCalls: number;
+  withFileEdits: number;
+  withTerminal: number;
+  autonomyRate: number;
+  delegationScore: number;
+  byAgentMode: { mode: string; autonomyRate: number; count: number }[];
+  byWorkType: { workType: string; autonomyRate: number; count: number }[];
+  toolBreakdown: { tool: string; count: number; category: string; privilege: 'high' | 'medium' | 'low' }[];
+  mcpBreakdown: { server: string; tools: string[]; count: number; toolCategories: string[] }[];
+  environmentBreakdown: { environment: 'host' | 'devcontainer' | 'unknown'; count: number; pct: number }[];
+  privilegeStats: { high: number; medium: number; low: number; highPct: number };
+  confirmationStats: {
+    autoSafe: number;       // type 1 — safe operations
+    autoApproved: number;   // type 3 — auto-approved by settings
+    manuallyApproved: number; // type 4 — user confirmed
+    total: number;
+    terminalOnHost: number; // terminal commands on host (not devcontainer)
+    terminalInDevcontainer: number;
+    autoApprovedTerminalOnHost: number; // risky: auto-approved terminal on host
+  };
+  automationOpportunities: {
+    manualConversational: number; // no tools used — just chat
+    manualPct: number;
+    lowToolDiversity: boolean;
+    suggestion: string;
+  };
+  hostTerminalWarnings: { commandLine: string; workspace: string }[];
+}
+
+/* ---- Anti-Pattern Detector ---- */
+export interface AntiPatternData {
+  patterns: AntiPattern[];
+  totalOccurrences: number;
+  weeklyTrend: { labels: string[]; counts: number[] };
+}
+
+export interface AntiPattern {
+  id: string;
+  name: string;
+  severity: 'high' | 'medium' | 'low';
+  occurrences: number;
+  description: string;
+  suggestion: string;
+  examples: string[];
+}
+

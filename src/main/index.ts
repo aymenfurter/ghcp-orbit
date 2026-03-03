@@ -66,7 +66,7 @@ function saveRedactSettings(settings: RedactSettings): void {
 /* ---- Session cache ---- */
 
 // Bump this version whenever the session schema changes to invalidate old caches
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 
 function getCachePath(): string {
   return path.join(app.getPath('userData'), 'session-cache.json');
@@ -248,6 +248,8 @@ function registerIPC() {
   ipcMain.handle(IPC.GET_RECOMMENDATIONS, safe((ws) => analyzer.getRecommendations(ws || '')));
   ipcMain.handle(IPC.GET_TIMELINE_ACTIVITY, safe((ws) => analyzer.getTimelineActivity(ws)));
   ipcMain.handle(IPC.GET_TOOLING, safe((f) => analyzer.getTooling(f || {})));
+  ipcMain.handle(IPC.GET_AUTONOMY, safe((f) => analyzer.getAutonomy(f || {})));
+  ipcMain.handle(IPC.GET_ANTI_PATTERNS, safe((f) => analyzer.getAntiPatterns(f || {})));
   ipcMain.handle(IPC.GET_LOGS_DIRS, safe(() => logsDirs));
 
   // Agentic results persistence

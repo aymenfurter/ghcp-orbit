@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('orbit', {
   saveAgentResults: (data: any) => ipcRenderer.invoke('save-agent-results', data),
   loadAgentResults: () => ipcRenderer.invoke('load-agent-results'),
   onAgentProgress: (cb: (event: any) => void) => ipcRenderer.on('agent-progress', (_, event) => cb(event)),
+  getAutonomy: (f?: any) => ipcRenderer.invoke('get-autonomy', f),
+  getAntiPatterns: (f?: any) => ipcRenderer.invoke('get-anti-patterns', f),
   getRedactSettings: () => ipcRenderer.invoke('get-redact-settings'),
   saveRedactSettings: (settings: any) => ipcRenderer.invoke('save-redact-settings', settings),
   getAvailableItems: () => ipcRenderer.invoke('get-available-items'),

@@ -5,7 +5,7 @@ import {
   CodeProductionData, ConsumptionData, DayTimeline, JourneyData, JourneyEvent,
   SessionList, WorkspaceBreakdown, BurndownData, BurndownConfig,
   RecommendationResult, WorkType, WORK_TYPES, SKU_BUDGETS, TimelineRequest,
-  ToolingData,
+  ToolingData, AutonomyData, AntiPatternData, AntiPattern,
 } from './types';
 import { techFromPath, shortPath } from './parser';
 
@@ -1204,6 +1204,687 @@ export class Analyzer {
         toolCallSeries,
         mcpServerSeries,
         skillSeries,
+      },
+    };
+  }
+
+  /* ---- Agentic Autonomy Tracker ---- */
+  getAutonomy(f: DateFilter): AutonomyData {
+    const filtered = this.filter(f);
+
+    // Tool categorization
+    const EDIT_TOOLS = new Set(['create_file', 'replace_string_in_file', 'multi_replace_string_in_file', 'insert_edit_into_file', 'editTool', 'edit_notebook_file', 'create_directory']);
+    const TERMINAL_TOOLS = new Set(['run_in_terminal', 'get_terminal_output', 'terminal_last_command', 'kill_terminal', 'await_terminal']);
+    const SEARCH_TOOLS = new Set(['grep_search', 'file_search', 'semantic_search', 'search_subagent', 'vscode_listCodeUsages']);
+    const READ_TOOLS = new Set(['read_file', 'list_dir', 'read_notebook_cell_output', 'copilot_getNotebookSummary', 'get_errors']);
+    const BROWSER_TOOLS = new Set(['open_browser_page', 'navigate_page', 'click_element', 'type_in_page', 'screenshot_page', 'read_page', 'hover_element', 'drag_element', 'handle_dialog', 'run_playwright_code']);
+    const AGENT_TOOLS = new Set(['runSubagent', 'manage_todo_list', 'tool_search_tool_regex']);
+    const REFACTOR_TOOLS = new Set(['vscode_renameSymbol']);
+    const NOTEBOOK_TOOLS = new Set(['run_notebook_cell', 'restart_notebook_kernel', 'configure_python_notebook', 'configure_non_python_notebook', 'create_new_jupyter_notebook']);
+
+    // Privilege classification — file creation/editing is HIGH
+    const HIGH_PRIV = new Set([
+      'run_in_terminal', 'kill_terminal', 'await_terminal',
+      'create_file', 'create_directory',
+      'replace_string_in_file', 'multi_replace_string_in_file', 'insert_edit_into_file',
+      'edit_notebook_file',
+      'open_browser_page', 'navigate_page', 'click_element', 'type_in_page', 'run_playwright_code',
+      'run_notebook_cell',
+    ]);
+    const MEDIUM_PRIV = new Set([
+      'vscode_renameSymbol', 'runSubagent',
+    ]);
+    // Everything else is low privilege (reads, searches, etc.)
+
+    // Bag-of-words for MCP tool categorization
+    const MCP_TOOL_CATEGORIES: Record<string, string[]> = {
+      'edit': ['edit', 'write', 'create', 'update', 'replace', 'insert', 'delete', 'remove', 'modify', 'patch', 'set'],
+      'read': ['read', 'get', 'fetch', 'list', 'query', 'search', 'find', 'lookup', 'browse', 'view', 'describe', 'show'],
+      'deploy': ['deploy', 'publish', 'push', 'release', 'build', 'provision', 'install'],
+      'auth': ['auth', 'login', 'token', 'credential', 'permission', 'role', 'identity'],
+      'run': ['run', 'execute', 'invoke', 'start', 'launch', 'trigger', 'call'],
+    };
+
+    const categorizeMcpTool = (toolName: string): string => {
+      const lower = toolName.toLowerCase();
+      for (const [cat, words] of Object.entries(MCP_TOOL_CATEGORIES)) {
+        if (words.some(w => lower.includes(w))) return cat;
+      }
+      return 'other';
+    };
+
+    const getCategory = (tool: string): string => {
+      if (EDIT_TOOLS.has(tool)) return 'File Editing';
+      if (TERMINAL_TOOLS.has(tool)) return 'Terminal';
+      if (SEARCH_TOOLS.has(tool)) return 'Search';
+      if (READ_TOOLS.has(tool)) return 'Read';
+      if (BROWSER_TOOLS.has(tool)) return 'Browser';
+      if (AGENT_TOOLS.has(tool)) return 'Agent';
+      if (REFACTOR_TOOLS.has(tool)) return 'Refactor';
+      if (NOTEBOOK_TOOLS.has(tool)) return 'Notebook';
+      if (tool.startsWith('mcp_')) return 'MCP';
+      return 'Other';
+    };
+
+    const getPrivilege = (tool: string): 'high' | 'medium' | 'low' => {
+      if (HIGH_PRIV.has(tool)) return 'high';
+      if (MEDIUM_PRIV.has(tool)) return 'medium';
+      // MCP tools: categorize by bag-of-words
+      if (tool.startsWith('mcp_')) {
+        const parts = tool.split('_');
+        if (parts.length >= 3) {
+          const mcpToolName = parts.slice(2).join('_');
+          const cat = categorizeMcpTool(mcpToolName);
+          if (cat === 'edit' || cat === 'deploy' || cat === 'run') return 'high';
+          if (cat === 'auth') return 'medium';
+        }
+        return 'medium'; // unknown MCP tools default to medium
+      }
+      return 'low';
+    };
+
+    let total = 0, withTools = 0, withEdits = 0, withTerminal = 0, autonomous = 0;
+    const byMode = new Map<string, { auto: number; total: number }>();
+    const byWT = new Map<string, { auto: number; total: number }>();
+    const toolCounts = new Map<string, number>();
+    const mcpServerTools = new Map<string, Set<string>>();
+    const mcpServerCounts = new Map<string, number>();
+    const mcpServerToolCategories = new Map<string, Set<string>>();
+    let envHost = 0, envDevcontainer = 0, envUnknown = 0;
+    let privHigh = 0, privMedium = 0, privLow = 0;
+    let manualConversational = 0;
+
+    // Confirmation tracking
+    let confAutoSafe = 0, confAutoApproved = 0, confManual = 0, confTotal = 0;
+    let termOnHost = 0, termInDev = 0, autoApprovedTermOnHost = 0;
+    const hostTerminalWarnings: { commandLine: string; workspace: string }[] = [];
+
+    // Pre-compute devcontainer detection per session from file paths
+    const devcontainerRe = /\/workspaces\/|vscode-remote|devcontainer|\.devcontainer|codespaces/i;
+    const sessionIsDevcontainer = new Map<string, boolean>();
+    for (const s of filtered) {
+      let detected = false;
+      for (const r of s.requests) {
+        for (const fp of [...r.editedFiles, ...r.referencedFiles]) {
+          if (devcontainerRe.test(fp)) { detected = true; break; }
+        }
+        if (detected) break;
+      }
+      sessionIsDevcontainer.set(s.sessionId, detected);
+    }
+
+    for (const s of filtered) {
+      const isDevcontainer = sessionIsDevcontainer.get(s.sessionId) || false;
+
+      for (const r of s.requests) {
+        total++;
+        const hasTools = r.toolsUsed.length > 0;
+        const hasEdits = r.toolsUsed.some(t => EDIT_TOOLS.has(t)) || r.editedFiles.length > 0;
+        const hasTerm = r.toolsUsed.some(t => TERMINAL_TOOLS.has(t));
+        const isAutonomous = hasTools || hasEdits;
+
+        if (hasTools) withTools++;
+        if (hasEdits) withEdits++;
+        if (hasTerm) withTerminal++;
+        if (isAutonomous) autonomous++;
+        if (!hasTools && !hasEdits) manualConversational++;
+
+        // Tool counts and privilege tracking
+        for (const tool of r.toolsUsed) {
+          toolCounts.set(tool, (toolCounts.get(tool) || 0) + 1);
+
+          const priv = getPrivilege(tool);
+          if (priv === 'high') privHigh++;
+          else if (priv === 'medium') privMedium++;
+          else privLow++;
+
+          // MCP server breakdown: mcp_serverName_toolName
+          if (tool.startsWith('mcp_')) {
+            const parts = tool.split('_');
+            if (parts.length >= 3) {
+              const server = parts[1];
+              const toolName = parts.slice(2).join('_');
+              if (!mcpServerTools.has(server)) mcpServerTools.set(server, new Set());
+              mcpServerTools.get(server)!.add(toolName);
+              mcpServerCounts.set(server, (mcpServerCounts.get(server) || 0) + 1);
+              // Track tool categories per server
+              if (!mcpServerToolCategories.has(server)) mcpServerToolCategories.set(server, new Set());
+              mcpServerToolCategories.get(server)!.add(categorizeMcpTool(toolName));
+            }
+          }
+        }
+
+        // Confirmation stats
+        for (const conf of (r.toolConfirmations || [])) {
+          confTotal++;
+          if (conf.confirmationType === 1) confAutoSafe++;
+          else if (conf.confirmationType === 3) confAutoApproved++;
+          else if (conf.confirmationType === 4) confManual++;
+
+          if (conf.isTerminal) {
+            if (isDevcontainer) {
+              termInDev++;
+            } else {
+              termOnHost++;
+              // Auto-approved terminal on host is risky
+              if (conf.confirmationType === 3) {
+                autoApprovedTermOnHost++;
+              }
+              // Collect host terminal warnings (sample up to 10)
+              if (hostTerminalWarnings.length < 10 && conf.commandLine) {
+                hostTerminalWarnings.push({ commandLine: conf.commandLine, workspace: s.workspaceName });
+              }
+            }
+          }
+        }
+
+        // Environment detection for tool-using requests
+        if (hasTools) {
+          if (isDevcontainer) envDevcontainer++;
+          else envHost++;
+        }
+
+        // By agent mode
+        const mode = r.agentMode || 'unknown';
+        if (!byMode.has(mode)) byMode.set(mode, { auto: 0, total: 0 });
+        const bm = byMode.get(mode)!;
+        bm.total++;
+        if (isAutonomous) bm.auto++;
+
+        // By work type
+        const wt = classifyWorkType(r.messageText, r.responseText);
+        if (!byWT.has(wt)) byWT.set(wt, { auto: 0, total: 0 });
+        const bw = byWT.get(wt)!;
+        bw.total++;
+        if (isAutonomous) bw.auto++;
+      }
+    }
+
+    // Delegation score
+    const toolDiversity = new Set(filtered.flatMap(s => s.requests.flatMap(r => r.toolsUsed))).size;
+    const delegationScore = Math.min(100, Math.round(
+      (total > 0 ? autonomous / total * 50 : 0) +
+      Math.min(30, toolDiversity * 3) +
+      (withTerminal > 0 ? 20 : 0)
+    ));
+
+    // Tool breakdown
+    const toolBreakdown = [...toolCounts.entries()]
+      .map(([tool, count]) => ({ tool, count, category: getCategory(tool), privilege: getPrivilege(tool) }))
+      .sort((a, b) => b.count - a.count);
+
+    // MCP breakdown with tool categories
+    const mcpBreakdown = [...mcpServerTools.entries()]
+      .map(([server, tools]) => ({
+        server,
+        tools: [...tools],
+        count: mcpServerCounts.get(server) || 0,
+        toolCategories: [...(mcpServerToolCategories.get(server) || [])],
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // Environment breakdown
+    const totalEnv = envHost + envDevcontainer + envUnknown;
+    const environmentBreakdown: AutonomyData['environmentBreakdown'] = [
+      { environment: 'host', count: envHost, pct: totalEnv > 0 ? Math.round(envHost / totalEnv * 1000) / 10 : 0 },
+      { environment: 'devcontainer', count: envDevcontainer, pct: totalEnv > 0 ? Math.round(envDevcontainer / totalEnv * 1000) / 10 : 0 },
+      { environment: 'unknown', count: envUnknown, pct: totalEnv > 0 ? Math.round(envUnknown / totalEnv * 1000) / 10 : 0 },
+    ].filter(e => e.count > 0);
+
+    // Privilege stats
+    const totalPriv = privHigh + privMedium + privLow;
+
+    // Automation opportunities
+    const manualPct = total > 0 ? Math.round(manualConversational / total * 1000) / 10 : 0;
+    const lowToolDiversity = toolDiversity < 5;
+    let suggestion = '';
+    if (manualPct > 60) suggestion = 'Most of your interactions are conversational. Use agent mode with tool access to let the AI edit files, run commands, and search your codebase autonomously.';
+    else if (manualPct > 30) suggestion = 'A significant portion of your work is manual. Try delegating file edits and terminal commands to the agent instead of copy-pasting.';
+    else if (lowToolDiversity) suggestion = 'Your tool usage is limited. Explore more tools like search, browser automation, and MCP servers to maximize delegation.';
+    else suggestion = 'Good delegation balance. Keep leveraging agent tools for autonomous work.';
+
+    return {
+      totalRequests: total, withToolCalls: withTools, withFileEdits: withEdits, withTerminal,
+      autonomyRate: total > 0 ? Math.round(autonomous / total * 1000) / 10 : 0,
+      delegationScore,
+      byAgentMode: [...byMode.entries()]
+        .filter(([, v]) => v.total >= 5)
+        .map(([mode, v]) => ({ mode, autonomyRate: Math.round(v.auto / v.total * 1000) / 10, count: v.total }))
+        .sort((a, b) => b.autonomyRate - a.autonomyRate),
+      byWorkType: [...byWT.entries()]
+        .map(([workType, v]) => ({ workType, autonomyRate: Math.round(v.auto / v.total * 1000) / 10, count: v.total }))
+        .sort((a, b) => b.autonomyRate - a.autonomyRate),
+      toolBreakdown,
+      mcpBreakdown,
+      environmentBreakdown,
+      privilegeStats: {
+        high: privHigh, medium: privMedium, low: privLow,
+        highPct: totalPriv > 0 ? Math.round(privHigh / totalPriv * 1000) / 10 : 0,
+      },
+      confirmationStats: {
+        autoSafe: confAutoSafe,
+        autoApproved: confAutoApproved,
+        manuallyApproved: confManual,
+        total: confTotal,
+        terminalOnHost: termOnHost,
+        terminalInDevcontainer: termInDev,
+        autoApprovedTerminalOnHost: autoApprovedTermOnHost,
+      },
+      automationOpportunities: {
+        manualConversational,
+        manualPct,
+        lowToolDiversity,
+        suggestion,
+      },
+      hostTerminalWarnings,
+    };
+  }
+
+  /* ---- Anti-Pattern Detector ---- */
+  getAntiPatterns(f: DateFilter): AntiPatternData {
+    const filtered = this.filter(f);
+    const patterns: AntiPattern[] = [];
+    const weeklyOcc = new Map<string, number>();
+    const addWeekly = (ts: number | null) => {
+      if (ts) { const w = tsToWeekLabel(ts); weeklyOcc.set(w, (weeklyOcc.get(w) || 0) + 1); }
+    };
+
+    // Messages that are expected workflow actions, not anti-patterns
+    const IGNORED_MESSAGES = new Set(['continue', '@agent try again', 'try again', 'keep going', 'go on']);
+    const isIgnored = (text: string) => IGNORED_MESSAGES.has(text.trim().toLowerCase());
+
+    // 1. Prompt loops: repeated identical prompts (back-to-back same text)
+    let promptLoops = 0;
+    const loopExamples: string[] = [];
+    for (const s of filtered) {
+      for (let i = 1; i < s.requests.length; i++) {
+        if (s.requests[i].messageText === s.requests[i - 1].messageText && s.requests[i].messageText.length > 10 && !isIgnored(s.requests[i].messageText) && !s.requests[i].messageText.includes('terminalLastCommand')) {
+          promptLoops++;
+          if (loopExamples.length < 5) loopExamples.push(`"${s.requests[i].messageText.slice(0, 80)}..." in ${s.workspaceName}`);
+          addWeekly(s.requests[i].timestamp || s.creationDate);
+        }
+      }
+    }
+    if (promptLoops > 0) patterns.push({
+      id: 'prompt-loops', name: 'Prompt Loops', severity: promptLoops > 20 ? 'high' : 'medium',
+      occurrences: promptLoops,
+      description: 'Repeated identical prompts suggest the AI isn\'t understanding your request.',
+      suggestion: 'Rephrase with more context, add file references, or break the task into smaller pieces.',
+      examples: loopExamples,
+    });
+
+    // 2. Cancel storms: 5+ consecutive cancellations in a session
+    let cancelStorms = 0;
+    const cancelExamples: string[] = [];
+    for (const s of filtered) {
+      let consecutive = 0;
+      for (const r of s.requests) {
+        if (r.isCanceled) { consecutive++; if (consecutive >= 5) { cancelStorms++; break; } }
+        else consecutive = 0;
+      }
+      if (consecutive >= 5 && cancelExamples.length < 5) cancelExamples.push(`${s.workspaceName}: started with "${s.requests[0]?.messageText.slice(0, 60)}..."`);
+    }
+    if (cancelStorms > 0) patterns.push({
+      id: 'cancel-storms', name: 'Cancel Storms', severity: cancelStorms > 10 ? 'high' : 'medium',
+      occurrences: cancelStorms,
+      description: 'Sessions with 5+ consecutive cancellations waste resources and time.',
+      suggestion: 'Start a new session with clearer context. Try a different model or approach.',
+      examples: cancelExamples,
+    });
+
+    // 3. Mega sessions without fresh start
+    let megaSessions = 0;
+    const megaExamples: string[] = [];
+    for (const s of filtered) {
+      if (s.requestCount > 50) {
+        megaSessions++;
+        if (megaExamples.length < 5) megaExamples.push(`${s.workspaceName}: ${s.requestCount} messages over ${s.lastMessageDate && s.creationDate ? Math.round((s.lastMessageDate - s.creationDate) / 60000) + ' min' : '?'}`);
+        addWeekly(s.creationDate);
+      }
+    }
+    if (megaSessions > 0) patterns.push({
+      id: 'mega-sessions', name: 'Mega Sessions (50+ msgs)', severity: megaSessions > 5 ? 'high' : 'medium',
+      occurrences: megaSessions,
+      description: 'Very long sessions degrade context quality as the model loses track of earlier messages.',
+      suggestion: 'Start fresh sessions for new tasks. Use /clear or open a new chat when switching focus.',
+      examples: megaExamples,
+    });
+
+    // 4. Premium model for trivial tasks
+    let premiumWaste = 0;
+    const wasteExamples: string[] = [];
+    for (const s of filtered) {
+      for (const r of s.requests) {
+        const model = normalizeModelId(r.modelId);
+        const mult = MODEL_MULTIPLIERS[model] ?? 1;
+        const wt = classifyWorkType(r.messageText, r.responseText);
+        if (mult >= 3 && (wt === 'docs' || wt === 'style' || wt === 'config') && r.messageLength < 100) {
+          premiumWaste++;
+          if (wasteExamples.length < 5) wasteExamples.push(`${model} for ${wt}: "${r.messageText.slice(0, 50)}..."`);
+          addWeekly(r.timestamp || s.creationDate);
+        }
+      }
+    }
+    if (premiumWaste > 0) patterns.push({
+      id: 'premium-waste', name: 'Premium Model Waste', severity: premiumWaste > 30 ? 'high' : premiumWaste > 10 ? 'medium' : 'low',
+      occurrences: premiumWaste,
+      description: 'Using expensive models (Opus, etc.) for simple documentation, styling, or config tasks.',
+      suggestion: 'Use GPT-4o, Haiku, or Flash for simple tasks. Save premium models for complex reasoning.',
+      examples: wasteExamples,
+    });
+
+    // 5. Tool ignorance: agent mode but no tools used
+    let toolIgnored = 0;
+    const toolIgnExamples: string[] = [];
+    for (const s of filtered) {
+      for (const r of s.requests) {
+        if (r.agentMode?.includes('editsAgent') && r.toolsUsed.length === 0 && r.messageLength > 50) {
+          toolIgnored++;
+          if (toolIgnExamples.length < 5) toolIgnExamples.push(`"${r.messageText.slice(0, 60)}..." in ${s.workspaceName}`);
+        }
+      }
+    }
+    if (toolIgnored > 0) patterns.push({
+      id: 'tool-ignored', name: 'Underutilized Agent Tools', severity: toolIgnored > 50 ? 'high' : 'medium',
+      occurrences: toolIgnored,
+      description: 'Using Agent Mode without leveraging tools reduces its effectiveness.',
+      suggestion: 'Give the agent permission to search files, run commands, and make edits autonomously.',
+      examples: toolIgnExamples,
+    });
+
+    // 6. No file context: requests with no file refs, no edits, just raw text
+    let noContext = 0;
+    const noCtxExamples: string[] = [];
+    // Filter out placeholder variable kinds (e.g. 'hashtagterminalLastCommand')
+    const isRealVariableKind = (key: string) => !key.startsWith('hashtag');
+    for (const s of filtered) {
+      for (const r of s.requests) {
+        const realVarKinds = Object.keys(r.variableKinds).filter(isRealVariableKind);
+        if (r.referencedFiles.length === 0 && r.editedFiles.length === 0 && r.toolsUsed.length === 0 && realVarKinds.length === 0 && r.messageLength > 50) {
+          noContext++;
+          if (noCtxExamples.length < 5) noCtxExamples.push(`"${r.messageText.slice(0, 60)}..." in ${s.workspaceName}`);
+        }
+      }
+    }
+    if (noContext > 0) patterns.push({
+      id: 'no-context', name: 'Context-Free Prompts', severity: noContext > 100 ? 'high' : noContext > 30 ? 'medium' : 'low',
+      occurrences: noContext,
+      description: 'Prompts without any file context or references lead to generic responses.',
+      suggestion: 'Use #file, @workspace, or open relevant files. The AI produces better code with context.',
+      examples: noCtxExamples,
+    });
+
+    // 7. Lazy prompts: very short prompts (<20 chars) that produce no code
+    let lazyPrompts = 0;
+    const lazyExamples: string[] = [];
+    for (const s of filtered) {
+      for (const r of s.requests) {
+        if (r.messageLength < 20 && r.messageLength > 0 && r.aiCode.length === 0 && !r.slashCommand && !isIgnored(r.messageText)) {
+          lazyPrompts++;
+          if (lazyExamples.length < 5) lazyExamples.push(`"${r.messageText}" in ${s.workspaceName}`);
+        }
+      }
+    }
+    if (lazyPrompts > 0) patterns.push({
+      id: 'lazy-prompts', name: 'Lazy Prompts', severity: lazyPrompts > 50 ? 'high' : lazyPrompts > 15 ? 'medium' : 'low',
+      occurrences: lazyPrompts,
+      description: 'Very short prompts (<20 chars) with no code output are often vague or incomplete.',
+      suggestion: 'Be specific about what you need. Include file names, expected behavior, and constraints.',
+      examples: lazyExamples,
+    });
+
+    // 8. Model switching chaos: 3+ different models in a single session
+    let modelChaos = 0;
+    const chaosExamples: string[] = [];
+    for (const s of filtered) {
+      if (s.requestCount < 3) continue;
+      const models = new Set(s.requests.map(r => normalizeModelId(r.modelId)));
+      if (models.size >= 3) {
+        modelChaos++;
+        if (chaosExamples.length < 5) chaosExamples.push(`${s.workspaceName}: used ${[...models].join(', ')}`);
+        addWeekly(s.creationDate);
+      }
+    }
+    if (modelChaos > 0) patterns.push({
+      id: 'model-chaos', name: 'Model Switching Chaos', severity: modelChaos > 15 ? 'high' : modelChaos > 5 ? 'medium' : 'low',
+      occurrences: modelChaos,
+      description: 'Using 3+ different models in a single session fragments context and wastes warm-up turns.',
+      suggestion: 'Pick one model per session. Switch models between sessions, not within them.',
+      examples: chaosExamples,
+    });
+
+    // 9. Abandoned sessions: sessions with only 1 message and no code output
+    let abandoned = 0;
+    const abandonedExamples: string[] = [];
+    for (const s of filtered) {
+      if (s.requestCount === 1) {
+        const r = s.requests[0];
+        if (r && r.aiCode.length === 0 && r.responseLength < 50) {
+          abandoned++;
+          if (abandonedExamples.length < 5) abandonedExamples.push(`"${r.messageText.slice(0, 60)}..." in ${s.workspaceName}`);
+        }
+      }
+    }
+    if (abandoned > 0) patterns.push({
+      id: 'abandoned-sessions', name: 'Abandoned Sessions', severity: abandoned > 30 ? 'high' : abandoned > 10 ? 'medium' : 'low',
+      occurrences: abandoned,
+      description: 'Single-message sessions with minimal response suggest false starts or throwaway queries.',
+      suggestion: 'Commit to sessions with clear goals. Reuse existing sessions instead of starting new ones.',
+      examples: abandonedExamples,
+    });
+
+    // 10. Copy-paste suspicion: very long prompts (>2000 chars) with no file references
+    let copyPaste = 0;
+    const cpExamples: string[] = [];
+    for (const s of filtered) {
+      for (const r of s.requests) {
+        if (r.messageLength > 2000 && r.referencedFiles.length === 0 && r.editedFiles.length === 0) {
+          copyPaste++;
+          if (cpExamples.length < 5) cpExamples.push(`${r.messageLength} chars in ${s.workspaceName}: "${r.messageText.slice(0, 50)}..."`);
+          addWeekly(r.timestamp || s.creationDate);
+        }
+      }
+    }
+    if (copyPaste > 0) patterns.push({
+      id: 'copy-paste', name: 'Copy-Paste Dumps', severity: copyPaste > 20 ? 'high' : copyPaste > 5 ? 'medium' : 'low',
+      occurrences: copyPaste,
+      description: 'Pasting large blocks of text without file references wastes context and causes hallucinations.',
+      suggestion: 'Use #file to reference files directly. Let the AI read the code instead of pasting it.',
+      examples: cpExamples,
+    });
+
+    // 11. Single-file fixation: sessions where all edits target the same file
+    let singleFile = 0;
+    const sfExamples: string[] = [];
+    for (const s of filtered) {
+      if (s.requestCount < 3) continue;
+      const allEdited = s.requests.flatMap(r => r.editedFiles);
+      if (allEdited.length >= 3) {
+        const unique = new Set(allEdited);
+        if (unique.size === 1) {
+          singleFile++;
+          if (sfExamples.length < 5) sfExamples.push(`${s.workspaceName}: ${s.requestCount} requests all editing ${[...unique][0]?.split('/').pop() || 'same file'}`);
+        }
+      }
+    }
+    if (singleFile > 0) patterns.push({
+      id: 'single-file', name: 'Single-File Fixation', severity: singleFile > 10 ? 'medium' : 'low',
+      occurrences: singleFile,
+      description: 'Repeatedly editing only one file across many turns may indicate the task needs decomposition.',
+      suggestion: 'Let the agent explore related files. Consider splitting changes across multiple files.',
+      examples: sfExamples,
+    });
+
+    // 12. High cancel rate: sessions where >50% of requests are canceled
+    let highCancel = 0;
+    const hcExamples: string[] = [];
+    for (const s of filtered) {
+      if (s.requestCount < 3) continue;
+      const cancelCount = s.requests.filter(r => r.isCanceled).length;
+      if (cancelCount / s.requestCount > 0.5) {
+        highCancel++;
+        if (hcExamples.length < 5) hcExamples.push(`${s.workspaceName}: ${cancelCount}/${s.requestCount} canceled`);
+        addWeekly(s.creationDate);
+      }
+    }
+    if (highCancel > 0) patterns.push({
+      id: 'high-cancel-rate', name: 'High Cancel Rate Sessions', severity: highCancel > 10 ? 'high' : 'medium',
+      occurrences: highCancel,
+      description: 'Sessions where most requests get canceled indicate a mismatch between expectations and results.',
+      suggestion: 'Improve initial prompt quality. Provide examples of expected output. Try a different model.',
+      examples: hcExamples,
+    });
+
+    // --- Safety & Autonomy Anti-Patterns ---
+
+    // Privilege classification (same as getAutonomy)
+    const HIGH_PRIV_AP = new Set([
+      'run_in_terminal', 'kill_terminal', 'await_terminal',
+      'create_file', 'create_directory',
+      'replace_string_in_file', 'multi_replace_string_in_file', 'insert_edit_into_file',
+      'edit_notebook_file',
+      'open_browser_page', 'navigate_page', 'click_element', 'type_in_page', 'run_playwright_code',
+      'run_notebook_cell',
+    ]);
+    const TERMINAL_TOOLS_AP = new Set(['run_in_terminal', 'get_terminal_output', 'terminal_last_command', 'kill_terminal', 'await_terminal']);
+
+    // Devcontainer detection per session
+    const devcontainerRe = /\/workspaces\/|vscode-remote|devcontainer|\.devcontainer|codespaces/i;
+    const sessionDevcontainer = new Map<string, boolean>();
+    for (const s of filtered) {
+      let detected = false;
+      for (const r of s.requests) {
+        for (const fp of [...r.editedFiles, ...r.referencedFiles]) {
+          if (devcontainerRe.test(fp)) { detected = true; break; }
+        }
+        if (detected) break;
+      }
+      sessionDevcontainer.set(s.sessionId, detected);
+    }
+
+    // Collect confirmation and environment stats across all requests
+    let totalAutoApproved = 0, totalManual = 0, totalAutoSafe = 0;
+    let termOnHostCount = 0;
+    let highPrivOnHost = 0;
+    let highPrivAutoApproved = 0;
+    const termOnHostExamples: string[] = [];
+    const autoApproveExamples: string[] = [];
+    const highPrivExamples: string[] = [];
+
+    for (const s of filtered) {
+      const isDev = sessionDevcontainer.get(s.sessionId) || false;
+      for (const r of s.requests) {
+        // Confirmation stats
+        for (const conf of (r.toolConfirmations || [])) {
+          if (conf.confirmationType === 1) totalAutoSafe++;
+          else if (conf.confirmationType === 3) {
+            totalAutoApproved++;
+            if (HIGH_PRIV_AP.has(conf.toolId) && autoApproveExamples.length < 5) {
+              autoApproveExamples.push(`Auto-approved ${conf.toolId} in ${s.workspaceName}`);
+            }
+          }
+          else if (conf.confirmationType === 4) totalManual++;
+
+          if (conf.isTerminal && !isDev) {
+            termOnHostCount++;
+            if (termOnHostExamples.length < 5 && conf.commandLine) {
+              termOnHostExamples.push(`\`${conf.commandLine.slice(0, 60)}\` in ${s.workspaceName}`);
+            }
+          }
+        }
+
+        // High-privilege tools on host
+        if (!isDev) {
+          for (const tool of r.toolsUsed) {
+            if (HIGH_PRIV_AP.has(tool)) {
+              highPrivOnHost++;
+              if (highPrivExamples.length < 5) highPrivExamples.push(`${tool} in ${s.workspaceName}`);
+            }
+            // High-priv MCP tools on host
+            if (tool.startsWith('mcp_')) {
+              const parts = tool.split('_');
+              if (parts.length >= 3) {
+                const mcpToolName = parts.slice(2).join('_').toLowerCase();
+                if (/\b(edit|write|create|update|delete|deploy|run|execute)\b/.test(mcpToolName)) {
+                  highPrivOnHost++;
+                  if (highPrivExamples.length < 5) highPrivExamples.push(`${tool} in ${s.workspaceName}`);
+                }
+              }
+            }
+          }
+
+          // Count auto-approved high-priv actions
+          for (const conf of (r.toolConfirmations || [])) {
+            if (conf.confirmationType === 3 && HIGH_PRIV_AP.has(conf.toolId)) {
+              highPrivAutoApproved++;
+            }
+          }
+        }
+      }
+    }
+
+    const totalConfirmations = totalAutoApproved + totalManual + totalAutoSafe;
+    const hasAutoApprove = totalAutoApproved > 0;
+
+    // 13. Auto-approve + host terminal: the most dangerous combo
+    if (hasAutoApprove && termOnHostCount > 0) {
+      patterns.push({
+        id: 'auto-approve-host-terminal', name: 'Auto-Approve + Host Terminal', severity: 'high',
+        occurrences: termOnHostCount,
+        description: `You have auto-approve enabled (${totalAutoApproved.toLocaleString()} auto-approved actions) and ${termOnHostCount.toLocaleString()} terminal commands ran on your host machine. The AI may execute arbitrary commands without your review.`,
+        suggestion: 'Use a dev container for agentic sessions, or disable auto-approve for terminal commands when working on host.',
+        examples: termOnHostExamples,
+      });
+      addWeekly(null);
+    }
+
+    // 14. Excessive auto-approve: >70% of confirmable actions are auto-approved
+    const confirmable = totalAutoApproved + totalManual;
+    if (confirmable > 20) {
+      const autoApprovePct = Math.round(totalAutoApproved / confirmable * 100);
+      if (autoApprovePct > 70) {
+        patterns.push({
+          id: 'excessive-auto-approve', name: 'Excessive Auto-Approve', severity: autoApprovePct > 90 ? 'high' : 'medium',
+          occurrences: totalAutoApproved,
+          description: `${autoApprovePct}% of confirmable actions (${totalAutoApproved.toLocaleString()}/${confirmable.toLocaleString()}) are auto-approved. Blind trust in AI actions increases risk of unintended changes.`,
+          suggestion: 'Review auto-approve scope in VS Code settings. Keep manual approval for destructive actions like terminal and file deletion.',
+          examples: autoApproveExamples,
+        });
+      }
+    }
+
+    // 15. Host-only development: all high-privilege tool use on host, no devcontainer
+    const totalDevcontainerSessions = [...sessionDevcontainer.values()].filter(v => v).length;
+    if (highPrivOnHost > 50 && totalDevcontainerSessions === 0) {
+      patterns.push({
+        id: 'no-devcontainer', name: 'No Dev Container Isolation', severity: highPrivOnHost > 200 ? 'high' : 'medium',
+        occurrences: highPrivOnHost,
+        description: `${highPrivOnHost.toLocaleString()} high-privilege actions (terminal, file edits) ran on your host machine with zero dev container sessions detected.`,
+        suggestion: 'Set up a dev container for your project. It isolates AI-driven file edits and terminal commands from your real system.',
+        examples: highPrivExamples,
+      });
+    }
+
+    // 16. High-privilege auto-approve: auto-approving file edits, terminal, etc.
+    if (highPrivAutoApproved > 10) {
+      patterns.push({
+        id: 'high-priv-auto-approve', name: 'High-Privilege Auto-Approve', severity: highPrivAutoApproved > 50 ? 'high' : 'medium',
+        occurrences: highPrivAutoApproved,
+        description: `${highPrivAutoApproved.toLocaleString()} high-privilege actions (file edits, terminal, browser) were auto-approved without manual review.`,
+        suggestion: 'Restrict auto-approve to safe operations like reads and searches. Keep manual confirmation for file writes and terminal commands.',
+        examples: autoApproveExamples,
+      });
+    }
+
+    const totalOccurrences = patterns.reduce((a, p) => a + p.occurrences, 0);
+    const sortedWeeks = [...weeklyOcc.keys()].sort();
+
+    return {
+      patterns: patterns.sort((a, b) => b.occurrences - a.occurrences),
+      totalOccurrences,
+      weeklyTrend: {
+        labels: sortedWeeks,
+        counts: sortedWeeks.map(w => weeklyOcc.get(w) || 0),
       },
     };
   }

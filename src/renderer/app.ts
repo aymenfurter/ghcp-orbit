@@ -12,6 +12,8 @@ import { renderSessions } from './pages/sessions';
 import { renderBehavior, renderAgentic } from './pages/recommendations';
 import { renderTooling } from './pages/tooling';
 import { renderSettings } from './pages/settings';
+import { renderAutonomy } from './pages/autonomy';
+import { renderAntiPatterns } from './pages/anti-patterns';
 import { loadRedactSettings, resetRedactCounters, redact } from './redact';
 import { injectZoomButtons, teardownZoom } from './zoom';
 
@@ -46,6 +48,8 @@ declare global {
       getAgentAnalysis: (ws?: string, model?: string) => Promise<any>;
       getTimelineActivity: (ws?: string) => Promise<any>;
       getTooling: (f?: any) => Promise<any>;
+      getAutonomy: (f?: any) => Promise<any>;
+      getAntiPatterns: (f?: any) => Promise<any>;
       reloadData: () => Promise<any>;
       selectLogsDir: () => Promise<any>;
       getLogsDirs: () => Promise<any>;
@@ -143,6 +147,8 @@ const pages: Record<string, PageRenderer> = {
   agentic: renderAgentic,
   tooling: renderTooling,
   settings: renderSettings,
+  autonomy: renderAutonomy,
+  'anti-patterns': renderAntiPatterns,
 };
 
 let currentPage = '';

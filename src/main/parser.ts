@@ -2,7 +2,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Session, SessionRequest, CodeBlock, Workspace } from './types';
+import { Session, SessionRequest, CodeBlock, Workspace, ToolConfirmation } from './types';
 
 const CODE_BLOCK_RE = /```(\w+)?\n([\s\S]*?)```/g;
 
@@ -383,6 +383,24 @@ function parseSessionFile(sessionFile: string, wsId: string, wsName: string): Se
       }
     }
 
+    // Extract tool confirmations from response array (toolInvocationSerialized entries)
+    const toolConfirmations: ToolConfirmation[] = [];
+    if (Array.isArray(resp)) {
+      for (const part of resp) {
+        if (part && typeof part === 'object' && part.kind === 'toolInvocationSerialized' && part.isConfirmed) {
+          const tsd = part.toolSpecificData;
+          const isTerminal = tsd?.kind === 'terminal';
+          toolConfirmations.push({
+            toolId: part.toolId || '',
+            confirmationType: part.isConfirmed.type ?? 0,
+            autoApproveScope: part.isConfirmed.scope,
+            isTerminal,
+            commandLine: isTerminal ? (tsd?.confirmation?.commandLine || tsd?.commandLine?.original) : undefined,
+          });
+        }
+      }
+    }
+
     sessionInfo.requests.push({
       requestId: req.requestId || '',
       timestamp: req.timestamp ?? null,
@@ -395,7 +413,7 @@ function parseSessionFile(sessionFile: string, wsId: string, wsName: string): Se
       totalElapsed: timings.totalElapsed ?? null,
       messageLength: msgText.length,
       responseLength: respText.length,
-      userCode, aiCode,
+      userCode, aiCode, toolConfirmations,
     });
   }
 
