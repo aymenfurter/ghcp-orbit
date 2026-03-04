@@ -1,6 +1,6 @@
 /* Recommendations page – local checks + optional AI analysis */
 import { Chart } from 'chart.js';
-import { fmtNum, getGlobalWorkspace, trackChart } from '../app';
+import { getGlobalWorkspace, trackChart } from '../app';
 
 /* ---- Threshold metadata for each local check ---- */
 interface CheckMeta {
@@ -340,7 +340,6 @@ async function loadLocalChecks() {
 
       const cardEl = card as HTMLElement;
       const checkId = cardEl.dataset.checkId!;
-      const score = parseInt(cardEl.dataset.score || '0', 10);
       const detail = document.getElementById(`rec-detail-${checkId}`);
       if (!detail) return;
 

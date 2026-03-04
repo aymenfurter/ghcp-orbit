@@ -1,6 +1,6 @@
 /* Dashboard page */
 import { Chart } from 'chart.js';
-import { trackChart, destroyCharts, COLORS, fmtNum, getWorkspaceFilter } from '../app';
+import { trackChart, COLORS, fmtNum, getWorkspaceFilter } from '../app';
 
 export async function renderDashboard(container: HTMLElement): Promise<void> {
   const f = getWorkspaceFilter();

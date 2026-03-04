@@ -222,7 +222,6 @@ function init() {
   window.orbit.onParseProgress((data: any) => {
     const sub = document.getElementById('load-sub');
     if (sub) {
-      const pct = data.total > 0 ? Math.round((data.done / data.total) * 100) : 0;
       sub.textContent = `Scanned ${data.done} / ${data.total} directories — ${data.sessions} sessions found`;
     }
     const fill = document.querySelector('.load-bar-fill') as HTMLElement;

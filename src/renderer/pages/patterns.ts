@@ -1,6 +1,6 @@
 /* Work Patterns page – heatmap + hourly breakdown by work type */
 import { Chart } from 'chart.js';
-import { trackChart, COLORS, fmtNum, getWorkspaceFilter } from '../app';
+import { trackChart, COLORS, getWorkspaceFilter } from '../app';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const WORK_TYPE_COLORS: Record<string, string> = {
@@ -76,7 +76,6 @@ export async function renderPatterns(container: HTMLElement): Promise<void> {
   // Work type doughnut
   if (hourly && hourly.byType) {
     const types = Object.keys(hourly.byType);
-    const totals = types.map(t => hourly.byType[t].reduce((a: number, b: number) => a + b, 0)).filter(v => v > 0);
     const nonZeroTypes = types.filter((_, i) => {
       return hourly.byType[types[i]].reduce((a: number, b: number) => a + b, 0) > 0;
     });

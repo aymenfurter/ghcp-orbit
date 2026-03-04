@@ -1,6 +1,6 @@
 /* Project Journey page */
 import { Chart } from 'chart.js';
-import { trackChart, COLORS, fmtNum, fmtDate, getGlobalWorkspace } from '../app';
+import { trackChart, COLORS, fmtNum, getGlobalWorkspace } from '../app';
 
 const WORK_TYPE_COLORS: Record<string, string> = {
   'feature': '#58a6ff', 'bug fix': '#f85149', 'refactor': '#d29922',
@@ -87,7 +87,7 @@ async function loadJourney() {
     <div id="journey-tab-activity" style="display:none">
       <div class="card">
         <div class="card-title">Session Concurrency</div>
-        <p class="text-sm text-muted mb-8">How many sessions you work on in parallel over time</p>
+        <p class="text-sm text-muted mb-8">How many sessions you work on in parallel over time${workspace ? ' — dashed line shows estimated project size growth' : ''}</p>
         <div class="chart-wrap"><canvas id="chart-concurrency-tl"></canvas></div>
       </div>
       <div class="card">
@@ -217,29 +217,58 @@ function renderActivityTab(data: any) {
   // Session concurrency chart
   if (data.concurrencyTimeline && data.concurrencyTimeline.labels.length) {
     const ct = data.concurrencyTimeline;
+    const hasWorkspace = !!getGlobalWorkspace();
+
+    const datasets: any[] = [
+      {
+        label: 'Concurrent Sessions',
+        data: ct.maxConcurrent,
+        borderColor: '#bc8cff',
+        backgroundColor: 'rgba(188,140,255,0.1)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+        borderWidth: 2,
+        yAxisID: 'y',
+      },
+    ];
+
+    // When a specific workspace is selected, add estimated project LoC size line
+    if (hasWorkspace && ct.cumulativeLoC) {
+      datasets.push({
+        label: 'Est. Project Size (LoC)',
+        data: ct.cumulativeLoC,
+        borderColor: '#3fb950',
+        backgroundColor: 'rgba(63,185,80,0.05)',
+        borderDash: [6, 3],
+        fill: false,
+        tension: 0.3,
+        pointRadius: 1,
+        borderWidth: 2,
+        yAxisID: 'y1',
+      });
+    }
+
+    const scales: any = {
+      x: { ticks: { maxTicksLimit: 20 }, grid: { display: false } },
+      y: { beginAtZero: true, position: 'left', title: { display: true, text: 'Sessions' }, ticks: { stepSize: 1 } },
+    };
+
+    if (hasWorkspace && ct.cumulativeLoC) {
+      scales.y1 = {
+        beginAtZero: true,
+        position: 'right',
+        title: { display: true, text: 'Cumulative LoC' },
+        grid: { drawOnChartArea: false },
+      };
+    }
+
     trackChart(new Chart(document.getElementById('chart-concurrency-tl') as HTMLCanvasElement, {
       type: 'line',
-      data: {
-        labels: ct.labels,
-        datasets: [
-          {
-            label: 'Concurrent Sessions',
-            data: ct.maxConcurrent,
-            borderColor: '#bc8cff',
-            backgroundColor: 'rgba(188,140,255,0.1)',
-            fill: true,
-            tension: 0.3,
-            pointRadius: 2,
-            borderWidth: 2,
-          },
-        ],
-      },
+      data: { labels: ct.labels, datasets },
       options: {
         responsive: true, maintainAspectRatio: false,
-        scales: {
-          x: { ticks: { maxTicksLimit: 20 }, grid: { display: false } },
-          y: { beginAtZero: true, title: { display: true, text: 'Sessions' }, ticks: { stepSize: 1 } },
-        },
+        scales,
         plugins: { legend: { position: 'bottom' } },
       },
     }));

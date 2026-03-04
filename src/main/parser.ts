@@ -2,7 +2,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { Session, SessionRequest, CodeBlock, Workspace, ToolConfirmation } from './types';
+import { Session, CodeBlock, Workspace, ToolConfirmation } from './types';
 
 const CODE_BLOCK_RE = /```(\w+)?\n([\s\S]*?)```/g;
 

@@ -604,6 +604,11 @@ export class Analyzer {
     let totalRequests = 0;
     let totalLoc = 0;
 
+    // Track per-file estimated sizes for project size estimation
+    const fileLocEstimate = new Map<string, number>();
+    // Track which day each file's estimate last changed
+    const fileDayUpdated = new Map<string, string>();
+
     const EDIT_TOOL_NAMES = new Set([
       'create_file', 'replace_string_in_file', 'multi_replace_string_in_file',
       'insert_edit_into_file', 'editTool', 'edit_notebook_file',
@@ -642,6 +647,12 @@ export class Analyzer {
             totalLoc += lines;
             const wsName = showAll ? s.workspaceName : workspace;
             fileLoc[shortPath(fpath, wsName)] = lines;
+            // Update per-file size estimate (use max single-edit LoC as proxy for file size)
+            const prev = fileLocEstimate.get(fpath) || 0;
+            if (lines > prev) {
+              fileLocEstimate.set(fpath, lines);
+              fileDayUpdated.set(fpath, day);
+            }
           }
         } else if (hadFileEdits) {
           const creates = editToolsUsed.filter(t => t === 'create_file').length;
@@ -787,6 +798,26 @@ export class Analyzer {
       concurrencyTimeline: {
         labels: allDays,
         maxConcurrent: dailyConcurrency,
+        cumulativeLoC: (() => {
+          // Build per-day snapshots of estimated project size (sum of per-file max LoC)
+          // Sort files by the day they were first/last updated
+          const dayFileMap = new Map<string, Map<string, number>>();
+          for (const [fpath, size] of fileLocEstimate) {
+            const d = fileDayUpdated.get(fpath) || allDays[0];
+            if (!dayFileMap.has(d)) dayFileMap.set(d, new Map());
+            dayFileMap.get(d)!.set(fpath, size);
+          }
+          const runningFiles = new Map<string, number>();
+          return allDays.map(d => {
+            const updates = dayFileMap.get(d);
+            if (updates) {
+              for (const [f, sz] of updates) runningFiles.set(f, sz);
+            }
+            let total = 0;
+            for (const sz of runningFiles.values()) total += sz;
+            return total;
+          });
+        })(),
       },
       summary: {
         totalLoC: totalLoc,
@@ -1290,7 +1321,7 @@ export class Analyzer {
     const mcpServerTools = new Map<string, Set<string>>();
     const mcpServerCounts = new Map<string, number>();
     const mcpServerToolCategories = new Map<string, Set<string>>();
-    let envHost = 0, envDevcontainer = 0, envUnknown = 0;
+    let envHost = 0, envDevcontainer = 0; const envUnknown = 0;
     let privHigh = 0, privMedium = 0, privLow = 0;
     let manualConversational = 0;
 
@@ -1437,7 +1468,7 @@ export class Analyzer {
     // Automation opportunities
     const manualPct = total > 0 ? Math.round(manualConversational / total * 1000) / 10 : 0;
     const lowToolDiversity = toolDiversity < 5;
-    let suggestion = '';
+    let suggestion;
     if (manualPct > 60) suggestion = 'Most of your interactions are conversational. Use agent mode with tool access to let the AI edit files, run commands, and search your codebase autonomously.';
     else if (manualPct > 30) suggestion = 'A significant portion of your work is manual. Try delegating file edits and terminal commands to the agent instead of copy-pasting.';
     else if (lowToolDiversity) suggestion = 'Your tool usage is limited. Explore more tools like search, browser automation, and MCP servers to maximize delegation.';
@@ -1746,7 +1777,7 @@ export class Analyzer {
       'open_browser_page', 'navigate_page', 'click_element', 'type_in_page', 'run_playwright_code',
       'run_notebook_cell',
     ]);
-    const TERMINAL_TOOLS_AP = new Set(['run_in_terminal', 'get_terminal_output', 'terminal_last_command', 'kill_terminal', 'await_terminal']);
+    // const TERMINAL_TOOLS_AP = new Set(['run_in_terminal', 'get_terminal_output', 'terminal_last_command', 'kill_terminal', 'await_terminal']);
 
     // Devcontainer detection per session
     const devcontainerRe = /\/workspaces\/|vscode-remote|devcontainer|\.devcontainer|codespaces/i;
@@ -1763,7 +1794,7 @@ export class Analyzer {
     }
 
     // Collect confirmation and environment stats across all requests
-    let totalAutoApproved = 0, totalManual = 0, totalAutoSafe = 0;
+    let totalAutoApproved = 0, totalManual = 0;
     let termOnHostCount = 0;
     let highPrivOnHost = 0;
     let highPrivAutoApproved = 0;
@@ -1776,7 +1807,7 @@ export class Analyzer {
       for (const r of s.requests) {
         // Confirmation stats
         for (const conf of (r.toolConfirmations || [])) {
-          if (conf.confirmationType === 1) totalAutoSafe++;
+          if (conf.confirmationType === 1) { /* auto-safe, tracked for future use */ }
           else if (conf.confirmationType === 3) {
             totalAutoApproved++;
             if (HIGH_PRIV_AP.has(conf.toolId) && autoApproveExamples.length < 5) {
@@ -1823,7 +1854,6 @@ export class Analyzer {
       }
     }
 
-    const totalConfirmations = totalAutoApproved + totalManual + totalAutoSafe;
     const hasAutoApprove = totalAutoApproved > 0;
 
     // 13. Auto-approve + host terminal: the most dangerous combo

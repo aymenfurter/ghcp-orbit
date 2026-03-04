@@ -5,7 +5,7 @@ import * as crypto from 'crypto';
 import { Worker } from 'worker_threads';
 import { parseAllLogs, ParseResult } from './parser';
 import { Analyzer } from './analyzer';
-import { runAllAgentChecks, getAgentChecks, stopAgent } from './agent';
+import { runAllAgentChecks, stopAgent } from './agent';
 import { IPC, BurndownConfig, Session, RedactSettings } from './types';
 
 // Prevent crash when parent terminal disconnects (write EIO on stdout/stderr)
@@ -29,7 +29,7 @@ function findLogsDirs(): string[] {
   const editionFolders = ['Code', 'Code - Insiders'];
 
   for (const edition of editionFolders) {
-    let vsPath = '';
+    let vsPath;
     if (process.platform === 'darwin') {
       vsPath = path.join(home, 'Library', 'Application Support', edition, 'User', 'workspaceStorage');
     } else if (process.platform === 'win32') {
@@ -163,7 +163,7 @@ function loadDataAsync(): Promise<number> {
     return Promise.resolve(count);
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve, _reject) => {
     const workerPath = path.join(__dirname, 'parse-worker.js');
     const worker = new Worker(workerPath, { workerData: { dirs: logsDirs } });
     worker.on('message', (msg: any) => {

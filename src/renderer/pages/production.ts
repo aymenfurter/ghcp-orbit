@@ -1,6 +1,6 @@
 /* Code Production page */
 import { Chart } from 'chart.js';
-import { trackChart, COLORS, fmtNum, fmtPct, getWorkspaceFilter } from '../app';
+import { trackChart, fmtNum, fmtPct, getWorkspaceFilter } from '../app';
 
 export async function renderProduction(container: HTMLElement): Promise<void> {
   const data = await window.orbit.getCodeProduction(getWorkspaceFilter());

@@ -10,7 +10,7 @@
     "build": "node build.mjs",
     "postinstall": "node scripts/patch-electron-name.mjs",
     "start": "npm run build && electron .",
-    "dev": "./scripts/dev.sh",
+    "dev": "node scripts/dev.mjs",
     "icons": "node scripts/generate-icons.mjs",
     "clean": "./scripts/clean.sh",
     "preflight": "./scripts/preflight.sh",

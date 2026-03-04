@@ -1,6 +1,6 @@
 /* Token Burndown page */
 import { Chart } from 'chart.js';
-import { trackChart, fmtNum, destroyCharts } from '../app';
+import { trackChart, fmtNum } from '../app';
 
 export async function renderBurndown(container: HTMLElement): Promise<void> {
   const now = new Date();

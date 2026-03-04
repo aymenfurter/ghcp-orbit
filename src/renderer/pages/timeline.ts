@@ -268,7 +268,7 @@ function buildTimeMapper(segments: Segment[]) {
   };
 }
 
-function renderGantt(data: any, wsColorMap: Record<string, string>) {
+function renderGantt(data: any, _wsColorMap: Record<string, string>) {
   const container = document.getElementById('gantt-container');
   if (!container) return;
 
@@ -459,7 +459,6 @@ function renderGantt(data: any, wsColorMap: Record<string, string>) {
   container.innerHTML = html;
 
   // Event handlers
-  const tooltip = document.getElementById('tl-tooltip');
   container.querySelectorAll('.gantt-bar').forEach(bar => {
     bar.addEventListener('click', () => {
       const idx = parseInt(bar.getAttribute('data-idx') || '0', 10);
@@ -484,7 +483,7 @@ function renderGantt(data: any, wsColorMap: Record<string, string>) {
 }
 
 function renderStrip(sessions: any[], mapper: ReturnType<typeof buildTimeMapper>, labelW: number, chartW: number, topY: number, stripH: number, label: string, mode: 'conc' | 'loc'): string {
-  const { totalActive, segments } = mapper;
+  const { totalActive } = mapper;
   const bucketMs = Math.max(60000, totalActive / 120); // ~120 buckets
   const bucketCount = Math.max(1, Math.ceil(totalActive / bucketMs));
   const values = new Array(bucketCount).fill(0);

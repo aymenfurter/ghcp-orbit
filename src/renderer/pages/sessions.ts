@@ -1,13 +1,11 @@
 /* Sessions page – paginated session list + detail view */
-import { fmtDate, fmtTime, fmtNum, getWorkspaceFilter } from '../app';
+import { fmtDate, fmtTime, getWorkspaceFilter } from '../app';
 
 let currentPage = 1;
 const PAGE_SIZE = 30;
 let currentFilter: any = {};
-let containerRef: HTMLElement | null = null;
 
 export async function renderSessions(container: HTMLElement): Promise<void> {
-  containerRef = container;
   currentPage = 1;
   currentFilter = getWorkspaceFilter();
 

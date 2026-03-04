@@ -192,7 +192,7 @@ export interface JourneyData {
   modelsTimeline: { labels: string[]; datasets: Record<string, number[]> };
   workTypesTimeline: { labels: string[]; datasets: Record<string, number[]> };
   toolsTimeline: { labels: string[]; datasets: Record<string, number[]> };
-  concurrencyTimeline: { labels: string[]; maxConcurrent: number[] };
+  concurrencyTimeline: { labels: string[]; maxConcurrent: number[]; cumulativeLoC: number[] };
   summary: {
     totalLoC: number;
     topModels: [string, number][];
