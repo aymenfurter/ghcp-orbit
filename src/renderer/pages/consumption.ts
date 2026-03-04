@@ -3,6 +3,7 @@ import { Chart } from 'chart.js';
 import { trackChart, COLORS, fmtNum, getWorkspaceFilter } from '../app';
 
 let cachedData: any = null;
+let cachedProd: any = null;
 const PREMIUM_PRICE = 0.04; // $/premium request
 
 export async function renderConsumption(container: HTMLElement): Promise<void> {
